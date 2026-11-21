@@ -97,3 +97,41 @@ describe("createSlackUI with an extended library", () => {
     expect(ui.prompt).toContain("Note(");
   });
 });
+
+describe("createSlackUI fixes for OpenUI 0.1.0", () => {
+  it("never sends a block with empty text", async () => {
+    const ui = createSlackUI({ library: extendLibrary() });
+    const client = fakeClient();
+    await ui.streamCard(client, target, once('h = Header("Title")\ns = Section("")\nroot = Root([h, s])'));
+    const update = client.calls.filter((c) => c.method === "chat.update").at(-1)!;
+    expect(update.args.blocks).toEqual([{ type: "header", text: { type: "plain_text", text: "Title" } }]);
+  });
+
+  it("cleans blocks before a host's own deliver sees them", async () => {
+    const seen: any[] = [];
+    const ui = createSlackUI({ library: extendLibrary(), deliver: async ({ result }) => void seen.push(result.output) });
+    await ui.streamCard(fakeClient(), target, once('h = Header("Title")\ns = Section("")\nroot = Root([h, s])'));
+    expect(seen).toEqual([[{ type: "header", text: { type: "plain_text", text: "Title" } }]]);
+  });
+
+  it("replaces the placeholder when Slack rejects the card, and reports the source", async () => {
+    const ui = createSlackUI({ library: extendLibrary() });
+    const client = fakeClient();
+    client.chat.update = async (args: any) => {
+      client.calls.push({ method: "chat.update", args });
+      if (args.blocks?.length) throw Object.assign(new Error("An API error occurred: invalid_blocks"), { data: { error: "invalid_blocks" } });
+      return { ok: true };
+    };
+    const source = 'h = Header("Title")\nroot = Root([h])';
+    const err: any = await ui.streamCard(client, target, once(source)).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.source).toBe(source);
+    expect(err.slackError).toBe("invalid_blocks");
+    const last = client.calls.at(-1)!;
+    expect(last.method).toBe("chat.update");
+    expect(last.args.text).toBe("Couldn't show this card (invalid_blocks).");
+    expect(last.args.blocks).toEqual([
+      { type: "context", elements: [{ type: "mrkdwn", text: "_Couldn't show this card (invalid_blocks)._" }] },
+    ]);
+  });
+});

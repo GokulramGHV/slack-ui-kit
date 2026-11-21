@@ -12,3 +12,5 @@ export {
   type SlackUIOptions,
   type StreamedCard,
 } from "./openui/index.js";
+export { CardRenderError } from "./openui/index.js";
+export { BLOCK_LIMITS, isEmptyText, sanitize, type Block, type Surface } from "./sanitize.js";

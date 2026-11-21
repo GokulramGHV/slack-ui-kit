@@ -19,10 +19,31 @@ import {
   viewValues,
 } from "@openuidev/channels/slack";
 import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
+import { sanitize } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
 import { buildPrompt } from "./prompt.js";
 
 const PLACEHOLDER_TEXT = "Designing your card…";
+
+/**
+ * A card that could not be shown. The placeholder message has already been
+ * replaced with a short note; `source` is what the model wrote, for debugging.
+ */
+export class CardRenderError extends Error {
+  readonly source: string;
+  readonly ts: string;
+  /** Slack's error code, such as "invalid_blocks", when Slack refused the card. */
+  readonly slackError?: string;
+  constructor(message: string, opts: { source: string; ts: string; slackError?: string; cause?: unknown }) {
+    super(message, { cause: opts.cause });
+    this.name = "CardRenderError";
+    this.source = opts.source;
+    this.ts = opts.ts;
+    this.slackError = opts.slackError;
+  }
+}
+
+const failureText = (code?: string) => `Couldn't show this card${code ? ` (${code})` : ""}.`;
 
 export type DeliverArgs = {
   client: any;
@@ -84,7 +105,16 @@ export function createSlackUI(opts: SlackUIOptions): SlackUI {
   const store = opts.store ?? new MemoryStore();
   const deliver = opts.deliver ?? defaultDeliver;
   const channel = { ...slackChannel, library: opts.library };
-  const engine = createEngine(channel, { toolProvider: opts.tools?.provider });
+  const raw = createEngine(channel, { toolProvider: opts.tools?.provider });
+  // Every render is cleaned (see sanitize), so neither deliver nor the caller sees empty text.
+  const clean = (r: RenderResult<SlackBlock[]>): RenderResult<SlackBlock[]> => ({ ...r, output: sanitize(r.output) });
+  const engine = {
+    renderState: async (source: string, state?: Record<string, unknown>) => clean(await raw.renderState(source, state)),
+    applyInteraction: async (source: string, state: Record<string, unknown>, interaction: Parameters<typeof raw.applyInteraction>[2]) =>
+      clean(await raw.applyInteraction(source, state, interaction)),
+    submitForm: async (source: string, state: Record<string, unknown>, formId: string, patch: Record<string, unknown>) =>
+      clean(await raw.submitForm(source, state, formId, patch)),
+  };
   const previewEngine = createEngine(channel, { quiet: true });
   const specs = opts.tools?.specs.map((s) => ({ ...s, outputSchema: s.outputSchema ?? {} }));
   const prompt = buildPrompt(opts.library, { tools: specs, rules: opts.rules });
@@ -125,8 +155,19 @@ export function createSlackUI(opts: SlackUIOptions): SlackUI {
     }
     await preview.dispose();
     const source = stripFences(raw);
-    const result = await engine.renderState(source);
-    await deliver({ client, channel, ts, result });
+    let result: RenderResult<SlackBlock[]>;
+    try {
+      result = await engine.renderState(source);
+      await deliver({ client, channel, ts, result });
+    } catch (e: any) {
+      // OpenUI would leave "Designing your card…" in the thread. Say what happened instead.
+      const slackError: string | undefined = e?.data?.error;
+      const text = failureText(slackError);
+      await client.chat
+        .update({ channel, ts, text, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: `_${text}_` }] }] })
+        .catch(() => {});
+      throw new CardRenderError(text, { source, ts, slackError, cause: e });
+    }
     await store.save(ref(channel, ts), { source, state: result.state });
     return { ...result, ts, source };
   }
