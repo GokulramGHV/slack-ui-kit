@@ -1,5 +1,5 @@
-// Public entry point. Step 1 exposes the OpenUI layer; rules, lock, store and
-// the kit factory come in later steps (see the design doc).
+// Public entry point. Most hosts need only createSlackKit; the pure pieces
+// (decide, applyDecision, sanitize, the block builders) are exported too.
 export {
   buildPrompt,
   createSlackUI,
@@ -36,3 +36,5 @@ export { controlsFromBlocks, controlsFromRender, type Controls } from "./control
 export { lockedBlocks, dateToken } from "./lock.js";
 export { createCardEngine, type CardEngine } from "./openui/index.js";
 export type { FormSpec } from "./types.js";
+export { blocks, LIMITS, richText, type Source, type TaskInput, type TaskStatus } from "./blocks.js";
+export * as components from "./components.js";

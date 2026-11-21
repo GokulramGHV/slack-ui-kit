@@ -353,3 +353,41 @@ describe("registerCard and feedback", () => {
     expect(events.at(-1)).toMatchObject({ user: "U7", control: { kind: "feedback", value: "positive" } });
   });
 });
+
+describe("components", () => {
+  it("adds the kit's components by default, next to the host's own", async () => {
+    const { defineBlockComponent } = await import("@openuidev/channels");
+    const { z } = await import("zod");
+    const Banner = defineBlockComponent({
+      name: "Banner",
+      description: "A host banner.",
+      props: z.object({ text: z.string() }),
+      render: ({ props }) => [{ type: "section", text: { type: "mrkdwn", text: `*${props.text}*` } }],
+    });
+    const kit = createSlackKit({ components: { add: [{ component: Banner, slots: ["Root"] }] } });
+    expect(kit.prompt).toContain("Plan(");
+    expect(kit.prompt).toContain("Banner(");
+  });
+
+  it("lets a host component replace a kit component of the same name", async () => {
+    const { defineBlockComponent } = await import("@openuidev/channels");
+    const { z } = await import("zod");
+    const Plan = defineBlockComponent({
+      name: "Plan",
+      description: "The host's own plan.",
+      props: z.object({ steps: z.array(z.string()) }),
+      render: ({ props }) => [{ type: "section", text: { type: "mrkdwn", text: props.steps.join(" > ") } }],
+    });
+    const kit = createSlackKit({ components: { add: [{ component: Plan, slots: ["Root"] }] } });
+    const r = await kit.render('root = Root([p])\np = Plan(["a", "b"])');
+    expect(r.blocks).toEqual([{ type: "section", text: { type: "mrkdwn", text: "a > b" } }]);
+  });
+});
+
+describe("components remove", () => {
+  it("drops a kit component the host removes", () => {
+    const kit = createSlackKit({ components: { remove: ["Plan"] } });
+    expect(kit.prompt).not.toContain("Plan(");
+    expect(kit.prompt).toContain("TaskCard(");
+  });
+});

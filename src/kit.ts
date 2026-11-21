@@ -17,6 +17,7 @@ import { slackGroupResolver } from "./groups.js";
 import { lockedBlocks } from "./lock.js";
 import { createCardEngine, type CardEngine, type Render } from "./openui/engine.js";
 import { extendLibrary, type ComponentChanges, type SlackLibrary } from "./openui/library.js";
+import { withKitComponents } from "./components.js";
 import { buildPrompt } from "./openui/prompt.js";
 import { CardRenderError, failureText, PLACEHOLDER_TEXT, stripFences } from "./openui/ui.js";
 import { sanitize, type Block } from "./sanitize.js";
@@ -163,7 +164,7 @@ export type SlackKit = {
 
 export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
   const store = opts.store ?? new MemoryCardStore();
-  const library: SlackLibrary = extendLibrary(opts.components);
+  const library: SlackLibrary = extendLibrary(withKitComponents(opts.components));
   const engine: CardEngine = createCardEngine(library, { tools: opts.tools, quiet: opts.quiet });
   const previewEngine: CardEngine = createCardEngine(library, { quiet: true });
   const specs = opts.tools?.specs.map((s) => ({ ...s, outputSchema: s.outputSchema ?? {} }));
