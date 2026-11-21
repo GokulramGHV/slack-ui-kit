@@ -259,7 +259,8 @@ export const KIT_COMPONENTS: ComponentChanges = {
   override: [Table, Form],
 };
 
-const nameOf = (entry: any): string | undefined => entry?.component?.name ?? entry?.name;
+/** A change entry's component name: either a component, or { component, slots }. */
+const nameOf = (entry: any): string | undefined => (typeof entry?.component === "function" ? entry.name : (entry?.component?.name ?? entry?.name));
 
 /**
  * The kit's components plus the host's. A host component (added or overriding)

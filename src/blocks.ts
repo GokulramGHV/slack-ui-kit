@@ -102,7 +102,7 @@ function table(headers: readonly string[], rows: readonly (readonly Cell[])[], o
   for (const r of rows.slice(0, headers.length ? LIMITS.tableRows - 1 : LIMITS.tableRows)) {
     out.push((Array.isArray(r) ? r : []).slice(0, cols).map((c) => cell(typeof c === "object" && c ? "" : c)));
   }
-  const align = opts.align?.length ? { column_settings: opts.align.slice(0, cols).map((a) => ({ align: ALIGNS.has(a) ? a : "left" })) } : {};
+  const align = Array.isArray(opts.align) && opts.align.length ? { column_settings: opts.align.slice(0, cols).map((a) => ({ align: ALIGNS.has(a) ? a : "left" })) } : {};
   return { type: "table", ...align, rows: out };
 }
 

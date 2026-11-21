@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live test for step 10. Run by hand with Gokul, never in CI.
+ * Live test for step 10. Run by hand, with permission, never in CI.
  *
  *   npm run build
  *   SLACK_BOT_TOKEN=xoxb-... SLACK_APP_TOKEN=xapp-... \
@@ -9,8 +9,11 @@
  * It posts one thread: one reply per component, then cards with each new kind
  * of button (card buttons, data table row buttons, feedback, a form with an
  * Alert). Then it listens over Socket Mode and logs every click: who clicked,
- * what the kit decided, and the event the bot would get. Have a second person
- * click too, to see refusals for real. Ctrl+C to stop.
+ * what the kit decided, and the event the bot would get. Ctrl+C to stop.
+ *
+ * Click order: a second person (not SLACK_TEST_OWNER) clicks each card FIRST,
+ * to see the refusal. Then the owner clicks, which locks the card. After the
+ * lock, everyone gets "already submitted", so refusals can't be seen any more.
  *
  *   --dry   print the calls instead of sending them (no tokens needed)
  *
@@ -18,6 +21,7 @@
  */
 import { createInterface } from "node:readline/promises";
 import { createSlackKit } from "../dist/index.js";
+import { clickCards, renderChecks } from "./live-cards.mjs";
 
 const dry = process.argv.includes("--dry");
 const env = (name) => {
@@ -55,59 +59,20 @@ function slackClient(token) {
   };
 }
 
-// ---------- What to post ----------
+// ---------- What to post (scripts/live-cards.mjs) ----------
 
-const RENDER_CHECKS = {
-  plan: `root = Root([p])
-p = Plan("Release", [t1, t2, t3, t4])
-t1 = TaskCard("Compare", "complete", "3 services checked")
-t2 = TaskCard("Build", "in_progress")
-t3 = TaskCard("Deploy", "pending")
-t4 = TaskCard("Notify", "error", null, "Webhook timed out", [Source("Runbook", "https://example.com/runbook")])`,
-  task_card_alone_pending: `root = Root([t])
-t = TaskCard("Waiting for review", "pending")`,
-  table_numbers_align: `root = Root([t])
-t = Table(["Service", "Changes"], [["api", 12], ["web", 3]], ["left", "right"])`,
-  data_table: `root = Root([d])
-d = DataTable("Services", ["Service", "Changes"], [["api", 12], ["web", 3], ["worker", 1], ["auth", 7]], 2)`,
-  card_carousel: `root = Root([c])
-c = Carousel([Card("api", "12 changes"), Card("web", "3 changes", [LinkButton("Docs", "https://example.com")])])`,
-  container: `root = Root([c])
-c = Container("Details", [Section("Hidden until expanded."), Tags([Tag("ready", "green")])], true, true)`,
-  layout: `root = Root([l])
-l = Layout("Summary", [[Section("*Stage*\\nBuild"), Section("*Services*\\n3")], [Section("*Owner*\\n<@${owner}>")]], true)`,
-  tags: `root = Root([t])
-t = Tags([Tag("ready", "green"), Tag("skipped", "orange"), Tag("blocked", "red")])`,
-  feedback: `root = Root([s, f])
-s = Section("A bot answer to rate.")
-f = Feedback()`,
-};
-
-const CLICK_CARDS = {
-  card_buttons: `root = Root([h, c])
-$picked = ""
-h = Section("Card buttons. Owner only. Picked: " + $picked)
-c = Carousel([Card("api", "Pick me", [Button("Pick", Action([@Set($picked, "api")]))]), Card("web", "Or me", [Button("Pick", Action([@Set($picked, "web")]))])])`,
-  data_table_buttons: `root = Root([h, d])
-$row = ""
-h = Section("Data table row buttons. Owner only. Row: " + $row)
-d = DataTable("Rows", ["Service", ""], [["api", Button("Choose", Action([@Set($row, "api")]))], ["web", Button("Choose", Action([@Set($row, "web")]))]])`,
-  feedback_anyone: `root = Root([s, f])
-s = Section("Feedback: anyone may press, it never locks.")
-f = Feedback("Helpful", "Not helpful")`,
-  form_with_alert: `root = Root([s, f])
-$note = ""
-s = Section("Form with an Alert in the modal. Note: " + $note)
-f = Form("Add a note", "Save", [Alert("This is a test alert.", "warning"), TextInput("Note", $note)])`,
-};
+const RENDER_CHECKS = renderChecks(owner);
+const CLICK_CARDS = clickCards();
 
 // ---------- Run ----------
 
 async function main() {
   const client = slackClient(env("SLACK_BOT_TOKEN"));
+  if (!dry && typeof WebSocket === "undefined") throw new Error("Needs Node 22 or newer (built-in WebSocket) to listen for clicks.");
   if (!dry) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`This posts about ${Object.keys(RENDER_CHECKS).length + Object.keys(CLICK_CARDS).length + 1} messages to ${channel}. Type yes to go on: `);
+    const count = 1 + 2 * (Object.keys(RENDER_CHECKS).length + Object.keys(CLICK_CARDS).length);
+    const answer = await rl.question(`This posts ${count} messages in one thread in ${channel}. Type yes to go on: `);
     rl.close();
     if (answer.trim() !== "yes") return console.log("Stopped. Nothing was posted.");
   }
@@ -148,22 +113,28 @@ async function main() {
   });
 }
 
-/** Socket Mode with Node's built-in WebSocket. Acks each envelope, with the handler's reply as payload. */
+/**
+ * Socket Mode with Node's built-in WebSocket. A click is acked at once, then
+ * handled, as a host should. A form submit is acked with the kit's reply.
+ */
 async function listen(appToken, handle) {
   const open = await fetch("https://slack.com/api/apps.connections.open", { method: "POST", headers: { authorization: `Bearer ${appToken}` } }).then((r) => r.json());
   if (!open.ok) throw new Error(`apps.connections.open: ${open.error}`);
   const ws = new WebSocket(open.url);
+  const ack = (envelope, payload) => ws.send(JSON.stringify({ envelope_id: envelope.envelope_id, ...(payload ? { payload } : {}) }));
   ws.addEventListener("message", async (msg) => {
-    const env = JSON.parse(msg.data);
-    if (env.type === "disconnect") return void ws.close();
-    if (!env.envelope_id) return;
-    let reply;
+    const envelope = JSON.parse(msg.data);
+    if (envelope.type === "disconnect") return void ws.close();
+    if (!envelope.envelope_id) return;
+    const payload = envelope.payload;
+    if (envelope.type !== "interactive" || payload?.type !== "view_submission") ack(envelope);
     try {
-      reply = env.type === "interactive" ? await handle(env.payload) : undefined;
+      const reply = envelope.type === "interactive" ? await handle(payload) : undefined;
+      if (payload?.type === "view_submission") ack(envelope, reply);
     } catch (e) {
       console.error("handler error", e);
+      if (payload?.type === "view_submission") ack(envelope);
     }
-    ws.send(JSON.stringify({ envelope_id: env.envelope_id, ...(reply ? { payload: reply } : {}) }));
   });
   ws.addEventListener("close", () => {
     console.log("Socket closed; reconnecting.");

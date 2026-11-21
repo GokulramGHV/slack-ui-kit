@@ -24,6 +24,9 @@ export function sanitize(blocks: readonly Block[], surface: Surface = "message")
   return out.slice(0, BLOCK_LIMITS[surface]);
 }
 
+/** False for a button whose label is empty (a half-written Button("...")). Other elements pass. */
+const labelled = (el: any): boolean => el?.type !== "button" || !isEmptyText(el.text);
+
 const keepClean = (list: readonly Block[] | undefined): Block[] =>
   (list ?? []).flatMap((b) => {
     const clean = sanitizeBlock(b);
@@ -45,9 +48,21 @@ function sanitizeBlock(block: Block): Block | undefined {
     case "context":
       b.elements = (b.elements ?? []).filter((e: any) => !isEmptyText(e));
       return b.elements.length ? b : undefined;
+    case "actions":
+      b.elements = (b.elements ?? []).filter(labelled);
+      return b.elements.length ? b : undefined;
     case "card":
       if (isEmptyText(b.title)) return undefined;
       if (isEmptyText(b.body)) delete b.body;
+      if (Array.isArray(b.actions)) {
+        b.actions = b.actions.filter(labelled);
+        if (!b.actions.length) delete b.actions;
+      }
+      return b;
+    case "data_table":
+      b.rows = (b.rows ?? []).map((row: Block[]) =>
+        (row ?? []).map((c) => (c?.type === "action_cell" && !labelled(c.element) ? { type: "raw_text", text: "" } : c)),
+      );
       return b;
     case "carousel":
       b.elements = keepClean(b.elements);

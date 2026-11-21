@@ -182,6 +182,16 @@ The same blocks without OpenUI: `blocks.plan(...)`, `blocks.taskCard(...)`,
 
 Add or replace components with `createSlackKit({ components: { add, override, remove } })`.
 A component of yours with the same name as one of the kit's replaces it.
+Removing a child (TaskCard, Source, Tag, Alert) leaves its parent unable to
+hold it, so remove the parent too (Plan, Tags).
+
+Cards made only of newer blocks still get readable notification text (the
+plan title, table caption, card title and so on). OpenUI alone would send
+"OpenUI message".
+
+If you call `decide` and `applyDecision` yourself instead of the kit's
+handlers, open forms with `formModal(spec, privateMetadata, callbackId)`.
+OpenUI's `buildModal` doesn't know about alerts.
 
 ### Not confirmed yet
 
@@ -194,6 +204,10 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
 - A TaskCard on its own with status pending (only tested inside a Plan).
 - TaskCard `output`, Container holding blocks other than a section, and
   Layout items other than a section.
+- Alert levels other than "warning". If Slack refuses a modal with an alert,
+  the kit opens the form again without alerts. Whether Slack accepts the same
+  `trigger_id` a second time is also unconfirmed.
+- Link buttons in cards and data table cells, and empty table cells.
 
 Card icon, hero image and subtitle are left out until they are tested.
 
@@ -204,7 +218,7 @@ npm install
 npm test           # offline, no Slack token
 npm run typecheck
 npm run build
-npm run live-test  # posts to Slack: only by hand, with permission
+npm run live-test  # posts to Slack: only by hand, with permission (Node 22+)
 ```
 
 `src/openui/ui.ts` and the prompt rules are adapted from OpenUI (MIT). See

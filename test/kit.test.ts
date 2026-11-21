@@ -413,3 +413,35 @@ f = Form("Release", "Start", [Alert("This releases to everyone.", "warning"), Te
     expect(r.response).toEqual({ response_action: "errors", errors: { $note: "Only <@U1> can do this." } });
   });
 });
+
+describe("a modal Slack refuses because of an alert", () => {
+  it("opens the form again without the alerts", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(
+      client,
+      target,
+      `root = Root([f])
+$note = ""
+f = Form("Release", "Start", [Alert("Careful.", "warning"), TextInput("Note", $note)])`,
+      { owner: "U1", placeholder: false },
+    );
+    const views: any[] = [];
+    client.views.open = async (args: any) => {
+      views.push(args.view);
+      if (args.view.blocks.some((b: any) => b.type === "alert")) throw Object.assign(new Error("invalid_arguments"), { data: { error: "invalid_arguments" } });
+      return { ok: true };
+    };
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: "form:f" }));
+    expect(views.map((v) => v.blocks.map((b: any) => b.type))).toEqual([["alert", "input"], ["input"]]);
+  });
+});
+
+describe("removing kit components that others refer to", () => {
+  it("drops their signatures and still renders Plan and Tags without crashing", async () => {
+    const kit = createSlackKit({ quiet: true, components: { remove: ["TaskCard", "Tag"] } });
+    expect(kit.prompt).not.toMatch(/^TaskCard\(/m);
+    expect(kit.prompt).not.toMatch(/^Tag\(/m);
+    await expect(kit.render('root = Root([p])\np = Plan("x", [TaskCard("a", "complete")])')).resolves.toBeDefined();
+    await expect(kit.render('root = Root([t])\nt = Tags([Tag("a", "green")])')).resolves.toBeDefined();
+  });
+});

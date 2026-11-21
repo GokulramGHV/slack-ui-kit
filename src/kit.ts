@@ -19,11 +19,12 @@ import { createCardEngine, type CardEngine, type Render } from "./openui/engine.
 import { extendLibrary, type ComponentChanges, type SlackLibrary } from "./openui/library.js";
 import { withKitComponents } from "./components.js";
 import { formModal } from "./modal.js";
+import { notificationText } from "./fallback.js";
 import { buildPrompt } from "./openui/prompt.js";
 import { CardRenderError, failureText, PLACEHOLDER_TEXT, stripFences } from "./openui/ui.js";
 import { sanitize, type Block } from "./sanitize.js";
 import { MemoryCardStore } from "./store.js";
-import type { Access, CardEvent, CardRecord, CardStore } from "./types.js";
+import type { Access, CardEvent, CardRecord, CardStore, FormSpec } from "./types.js";
 
 /** The Slack methods the kit uses. A Bolt client or @slack/web-api WebClient fits. */
 export type SlackClient = {
@@ -342,7 +343,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       access: args.access ?? {},
       trusted: true,
       kind: "blocks",
-      text: args.text ?? "card",
+      text: args.text ?? notificationText(args.blocks),
       state: {},
       blocks: sanitize(args.blocks),
       controls: controlsFromBlocks(args.blocks),
@@ -414,8 +415,14 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       case "open-form": {
         const spec = card.forms[decision.formId];
         if (!spec || !read.triggerId) return { decision, done: Promise.resolve(result()) };
-        const view = formModal(spec, wrapMeta({ channel: card.channel, ts: card.ts, formId: decision.formId }), callbackId);
-        return { decision, done: client.views.open({ trigger_id: read.triggerId, view }).then(() => result()) };
+        const meta = wrapMeta({ channel: card.channel, ts: card.ts, formId: decision.formId });
+        const open = (v: Record<string, any>) => client.views.open({ trigger_id: read.triggerId, view: v });
+        const opened = open(formModal(spec, meta, callbackId)).catch((e) => {
+          // Alert in a modal is not confirmed live. If Slack refuses it, open the form without alerts.
+          if (!(spec as any).notices?.length) throw e;
+          return open(formModal({ ...spec, notices: [] } as FormSpec, meta, callbackId));
+        });
+        return { decision, done: opened.then(() => result()) };
       }
       case "apply": {
         if (decision.kind === "feedback") {

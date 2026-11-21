@@ -2,13 +2,14 @@ import { createEngine } from "@openuidev/channels";
 import type { Interaction, RenderResult } from "@openuidev/channels";
 import { slackChannel } from "@openuidev/channels/slack";
 import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
+import { notificationText, OPENUI_DEFAULT_TEXT } from "../fallback.js";
 import { sanitize } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
 
 export type Render = RenderResult<SlackBlock[]>;
 type State = Record<string, unknown>;
 
-/** OpenUI's engine for a library, with every render cleaned (see sanitize). */
+/** OpenUI's engine for a library, with every render cleaned (see sanitize) and given readable text. */
 export type CardEngine = {
   renderState(source: string, state?: State): Promise<Render>;
   applyInteraction(source: string, state: State, interaction: Interaction): Promise<Render>;
@@ -17,7 +18,12 @@ export type CardEngine = {
 
 export function createCardEngine(library: SlackLibrary, opts: { tools?: SlackTools; quiet?: boolean } = {}): CardEngine {
   const raw = createEngine({ ...slackChannel, library }, { toolProvider: opts.tools?.provider, quiet: opts.quiet });
-  const clean = (r: Render): Render => ({ ...r, output: sanitize(r.output) });
+  const clean = (r: Render): Render => {
+    const output = sanitize(r.output);
+    // OpenUI only reads Header and Section for the text; cards of newer blocks would say "OpenUI message".
+    const text = r.text && r.text !== OPENUI_DEFAULT_TEXT ? r.text : notificationText(output);
+    return { ...r, output, text };
+  };
   return {
     renderState: async (source, state) => clean(await raw.renderState(source, state)),
     applyInteraction: async (source, state, interaction) => clean(await raw.applyInteraction(source, state, interaction)),

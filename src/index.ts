@@ -38,3 +38,6 @@ export { createCardEngine, type CardEngine } from "./openui/index.js";
 export type { FormSpec } from "./types.js";
 export { blocks, LIMITS, richText, type Source, type TaskInput, type TaskStatus } from "./blocks.js";
 export * as components from "./components.js";
+export { formModal } from "./modal.js";
+export { notificationText } from "./fallback.js";
+export type { FormNotice } from "./components.js";

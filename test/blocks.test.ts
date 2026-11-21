@@ -154,3 +154,9 @@ describe("blocks.feedback, blocks.tags and blocks.alert", () => {
     expect(blocks.alert("x", "loud" as any)).toEqual({ type: "alert", text: { type: "mrkdwn", text: "x" } });
   });
 });
+
+describe("blocks.table with wrong input", () => {
+  it("ignores an alignment that isn't a list", () => {
+    expect(blocks.table(["a"], [["1"]], { align: "left" as any })).not.toHaveProperty("column_settings");
+  });
+});

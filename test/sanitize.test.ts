@@ -78,3 +78,17 @@ describe("sanitize inside nested blocks", () => {
     expect(sanitize([{ type: "carousel", elements: [card("")] }])).toEqual([]);
   });
 });
+
+describe("sanitize buttons with no label", () => {
+  const button = (text: string, id = "b") => ({ type: "button", action_id: id, text: { type: "plain_text", text } });
+
+  it("drops them from actions blocks, cards and data table cells", () => {
+    expect(sanitize([{ type: "actions", elements: [button(""), button("Go")] }])).toEqual([{ type: "actions", elements: [button("Go")] }]);
+    expect(sanitize([{ type: "actions", elements: [button(" ")] }])).toEqual([]);
+    expect(sanitize([{ type: "card", title: { type: "mrkdwn", text: "a" }, actions: [button("")] }])).toEqual([
+      { type: "card", title: { type: "mrkdwn", text: "a" } },
+    ]);
+    const dt = sanitize([{ type: "data_table", caption: "x", rows: [[{ type: "action_cell", element: button("") }]] }]);
+    expect(dt[0]!.rows[0][0]).toEqual({ type: "raw_text", text: "" });
+  });
+});
