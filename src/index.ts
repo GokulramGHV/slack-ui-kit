@@ -14,3 +14,5 @@ export {
 } from "./openui/index.js";
 export { CardRenderError } from "./openui/index.js";
 export { BLOCK_LIMITS, isEmptyText, sanitize, type Block, type Surface } from "./sanitize.js";
+export { MemoryCardStore } from "./store.js";
+export type { Access, CardEvent, CardRecord, CardStore, ControlKind, LockInfo, Rule } from "./types.js";
