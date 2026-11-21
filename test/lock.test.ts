@@ -93,3 +93,40 @@ describe("lockedBlocks with a data table", () => {
     expect(out.rows[2][1]).toEqual(dt.rows[2]![1]);
   });
 });
+
+describe("lockedBlocks with nested blocks", () => {
+  const lock = { by: "U1", at: "2026-11-22T10:00:00.000Z", label: "Open" };
+  const btn = (id: string) => ({ type: "button", action_id: id, text: { type: "plain_text", text: "Open" } });
+  const link = { type: "button", action_id: "l", url: "https://example.com", text: { type: "plain_text", text: "Docs" } };
+  const card = (actions: any[]) => ({ type: "card", title: { type: "mrkdwn", text: "api" }, actions });
+  const live = (blocks: any[]) => JSON.stringify(blocks).match(/"action_id":"(el_\d+|pick)"/g) ?? [];
+
+  it("removes card buttons, keeps card links, and drops empty actions", () => {
+    const out = lockedBlocks([card([btn("el_0"), link]), card([btn("el_1")])], lock);
+    expect(out[0]!.actions).toEqual([link]);
+    expect(out[1]).not.toHaveProperty("actions");
+  });
+
+  it("goes into carousels, containers and layouts", () => {
+    const pick = { type: "static_select", action_id: "pick", placeholder: { type: "plain_text", text: "Service" }, initial_option: { value: "api", text: { type: "plain_text", text: "api" } } };
+    const section = { type: "section", text: { type: "mrkdwn", text: "Choose" }, accessory: pick };
+    const blocks = [
+      { type: "carousel", elements: [card([btn("el_0")]), card([link])] },
+      { type: "container", title: { type: "plain_text", text: "More" }, child_blocks: [section] },
+      { type: "layout", label: "Grid", rows: [{ items: [{ block: section }, { block: { type: "section", text: { type: "mrkdwn", text: "x" } } }] }] },
+    ];
+    const out = lockedBlocks(blocks, lock);
+    expect(live(out)).toEqual([]);
+    expect(out[0]!.elements[1].actions).toEqual([link]);
+    expect(out[1]!.child_blocks).toEqual([
+      { type: "section", text: { type: "mrkdwn", text: "Choose" } },
+      { type: "section", text: { type: "mrkdwn", text: "*Service:* api" } },
+    ]);
+    expect(out[2]!.rows[0].items[0]).toEqual({ block: { type: "section", text: { type: "mrkdwn", text: "Choose" } } });
+  });
+
+  it("keeps feedback buttons", () => {
+    const fb = { type: "context_actions", elements: [{ type: "feedback_buttons", action_id: "f" }] };
+    expect(lockedBlocks([fb], lock)[0]).toEqual(fb);
+  });
+});

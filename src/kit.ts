@@ -7,7 +7,7 @@
  * group lookup), open a form if asked, take the lock with a version check, and
  * only then run slow work (OpenUI Mutation tools), save, redraw and tell the bot.
  */
-import { buildModal, createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
+import { createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
 import type { SlackTools } from "@openuidev/channels/slack";
 import type { GroupResolver } from "./access.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
@@ -18,6 +18,7 @@ import { lockedBlocks } from "./lock.js";
 import { createCardEngine, type CardEngine, type Render } from "./openui/engine.js";
 import { extendLibrary, type ComponentChanges, type SlackLibrary } from "./openui/library.js";
 import { withKitComponents } from "./components.js";
+import { formModal } from "./modal.js";
 import { buildPrompt } from "./openui/prompt.js";
 import { CardRenderError, failureText, PLACEHOLDER_TEXT, stripFences } from "./openui/ui.js";
 import { sanitize, type Block } from "./sanitize.js";
@@ -413,8 +414,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       case "open-form": {
         const spec = card.forms[decision.formId];
         if (!spec || !read.triggerId) return { decision, done: Promise.resolve(result()) };
-        const view: any = buildModal(spec as any, wrapMeta({ channel: card.channel, ts: card.ts, formId: decision.formId }));
-        view.callback_id = callbackId;
+        const view = formModal(spec, wrapMeta({ channel: card.channel, ts: card.ts, formId: decision.formId }), callbackId);
         return { decision, done: client.views.open({ trigger_id: read.triggerId, view }).then(() => result()) };
       }
       case "apply": {

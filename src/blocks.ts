@@ -29,7 +29,15 @@ export const LIMITS = {
   dataTableRows: 200,
   dataTableColumns: 20,
   dataTableChars: 20_000,
+  cardActions: 3,
+  carouselCards: 10,
+  containerChildren: 10,
+  layoutRows: 5,
+  layoutItems: 3,
 } as const;
+
+export type TagColor = "gray" | "brown" | "purple" | "indigo" | "blue" | "green" | "yellow" | "orange" | "red";
+export type AlertLevel = "default" | "info" | "warning" | "error" | "success";
 
 const STATUSES: ReadonlySet<string> = new Set(["pending", "in_progress", "complete", "error"]);
 const filled = (s: unknown): s is string => typeof s === "string" && s.trim() !== "";
@@ -118,4 +126,81 @@ function dataTable(caption: string, headers: readonly string[], rows: readonly (
   return { type: "data_table", caption: String(caption ?? ""), ...pageSize, rows: [head, ...body] };
 }
 
-export const blocks = { plan, taskCard, richText, table, dataTable };
+const mrkdwn = (text: string) => ({ type: "mrkdwn", text });
+const plainText = (text: string) => ({ type: "plain_text", text });
+
+/** Slack's card block: a title, optional body, and up to 3 buttons. */
+function card(c: { title: string; body?: string; actions?: readonly Block[] }): Block {
+  const actions = (c.actions ?? []).slice(0, LIMITS.cardActions);
+  return {
+    type: "card",
+    title: mrkdwn(String(c.title ?? "")),
+    ...(filled(c.body) ? { body: mrkdwn(c.body) } : {}),
+    ...(actions.length ? { actions } : {}),
+  };
+}
+
+/** Cards side by side that scroll sideways. 1 to 10 cards. */
+function carousel(cards: readonly Block[]): Block {
+  return { type: "carousel", elements: cards.slice(0, LIMITS.carouselCards) };
+}
+
+/** A titled group of up to 10 blocks that can be collapsed. */
+function container(title: string, children: readonly Block[], opts: { collapsible?: boolean; collapsed?: boolean } = {}): Block {
+  return {
+    type: "container",
+    title: plainText(String(title ?? "")),
+    ...(opts.collapsible ? { is_collapsible: true } : {}),
+    ...(opts.collapsible && opts.collapsed ? { default_collapsed: true } : {}),
+    child_blocks: children.slice(0, LIMITS.containerChildren),
+  };
+}
+
+/** A grid: 1 to 5 rows of 1 to 3 blocks each. */
+function layout(label: string, rows: readonly (readonly Block[])[], opts: { gridLines?: boolean } = {}): Block {
+  return {
+    type: "layout",
+    label: String(label ?? ""),
+    ...(opts.gridLines ? { grid_lines: "rows" } : {}),
+    rows: rows.slice(0, LIMITS.layoutRows).map((r) => ({ items: r.slice(0, LIMITS.layoutItems).map((block) => ({ block })) })),
+  };
+}
+
+/** Thumbs up and down. A click's value is "positive" or "negative". Messages only. */
+function feedback(opts: { actionId?: string; positive?: string; negative?: string } = {}): Block {
+  return {
+    type: "context_actions",
+    elements: [
+      {
+        type: "feedback_buttons",
+        action_id: opts.actionId || "feedback",
+        positive_button: { text: plainText(opts.positive || "Good"), value: "positive" },
+        negative_button: { text: plainText(opts.negative || "Bad"), value: "negative" },
+      },
+    ],
+  };
+}
+
+const TAG_COLORS: ReadonlySet<string> = new Set(["gray", "brown", "purple", "indigo", "blue", "green", "yellow", "orange", "red"]);
+
+/** A row of colored tags. */
+function tags(list: readonly { text: string; color?: TagColor }[]): Block {
+  const elements: Block[] = [];
+  for (const t of list.filter((t) => filled(t?.text))) {
+    if (elements.length) elements.push({ type: "text", text: " " });
+    elements.push({ type: "tag", text: t.text, color: t.color && TAG_COLORS.has(t.color) ? t.color : "gray" });
+  }
+  return { type: "rich_text", elements: [{ type: "rich_text_section", elements }] };
+}
+
+const ALERT_LEVELS: ReadonlySet<string> = new Set(["default", "info", "warning", "error", "success"]);
+
+/**
+ * Slack's alert block. Slack refuses it in messages, so the kit only offers
+ * it inside forms. Not yet confirmed in a modal by a live test.
+ */
+function alert(text: string, level?: AlertLevel): Block {
+  return { type: "alert", ...(level && ALERT_LEVELS.has(level) ? { level } : {}), text: mrkdwn(String(text ?? "")) };
+}
+
+export const blocks = { plan, taskCard, richText, table, dataTable, card, carousel, container, layout, feedback, tags, alert };

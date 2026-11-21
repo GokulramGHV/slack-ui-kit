@@ -92,3 +92,65 @@ describe("blocks.dataTable", () => {
     expect(long.rows.reduce((n: number, r: any[]) => n + r.reduce((m, c) => m + (c.text?.length ?? 0), 0), 0)).toBeLessThanOrEqual(20_000);
   });
 });
+
+describe("blocks.card and blocks.carousel", () => {
+  const open = (id: string) => ({ type: "button", action_id: id, text: { type: "plain_text", text: "Open" } });
+
+  it("build the card and carousel shapes Slack accepted", () => {
+    expect(blocks.card({ title: "api", body: "12 commits ahead", actions: [open("card_api")] })).toEqual(accepted.card);
+    const cards = [
+      ["api", "12 commits"],
+      ["ui", "3 commits"],
+      ["worker", "1 commit"],
+    ].map(([t, b]) => blocks.card({ title: t!, body: b, actions: [open(`card_${t}`)] }));
+    expect(blocks.carousel(cards)).toEqual(accepted.carousel);
+  });
+
+  it("keep to Slack's limits: 3 buttons per card, 10 cards per carousel", () => {
+    expect(blocks.card({ title: "x", actions: [1, 2, 3, 4].map((i) => open(`b${i}`)) }).actions).toHaveLength(3);
+    expect(blocks.carousel(Array.from({ length: 12 }, () => blocks.card({ title: "x" }))).elements).toHaveLength(10);
+  });
+
+  it("leave out an empty body and empty actions", () => {
+    expect(blocks.card({ title: "x", body: " ", actions: [] })).toEqual({ type: "card", title: { type: "mrkdwn", text: "x" } });
+  });
+});
+
+describe("blocks.container and blocks.layout", () => {
+  const section = (text: string) => ({ type: "section", text: { type: "mrkdwn", text } });
+
+  it("build the container and layout shapes Slack accepted", () => {
+    expect(blocks.container("Details", [section("Hidden until expanded.")], { collapsible: true, collapsed: true })).toEqual(accepted.container);
+    expect(blocks.layout("Summary", [[section("*Stage*\nCompare"), section("*Repos*\n5")]], { gridLines: true })).toEqual(accepted.layout);
+  });
+
+  it("keep to Slack's limits: 10 children, 5 rows of 3 items", () => {
+    expect(blocks.container("x", Array.from({ length: 12 }, () => section("a"))).child_blocks).toHaveLength(10);
+    const l = blocks.layout("x", Array.from({ length: 7 }, () => Array.from({ length: 4 }, () => section("a"))));
+    expect(l.rows).toHaveLength(5);
+    expect(l.rows[0].items).toHaveLength(3);
+    expect(l).not.toHaveProperty("grid_lines");
+  });
+});
+
+describe("blocks.feedback, blocks.tags and blocks.alert", () => {
+  it("build the feedback buttons shape Slack accepted", () => {
+    const fb = blocks.feedback({ actionId: "fb", positive: "Good", negative: "Bad" });
+    expect(fb.type).toBe("context_actions");
+    expect(fb.elements[0]).toEqual({
+      ...accepted.feedback_buttons,
+      positive_button: { ...accepted.feedback_buttons.positive_button, value: "positive" },
+      negative_button: { ...accepted.feedback_buttons.negative_button, value: "negative" },
+    });
+  });
+
+  it("build the tag shape Slack accepted, with gray for an unknown color", () => {
+    expect(blocks.tags([{ text: "ready", color: "green" }, { text: "skipped", color: "orange" }])).toEqual(accepted.tags);
+    expect(blocks.tags([{ text: "x", color: "pink" as any }]).elements[0].elements[0].color).toBe("gray");
+  });
+
+  it("build an alert, leaving out a level Slack may not know", () => {
+    expect(blocks.alert("2 repos were skipped.", "warning")).toEqual(accepted.alert_refused_in_message);
+    expect(blocks.alert("x", "loud" as any)).toEqual({ type: "alert", text: { type: "mrkdwn", text: "x" } });
+  });
+});

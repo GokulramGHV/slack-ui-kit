@@ -48,3 +48,33 @@ describe("sanitize", () => {
     expect(sanitize(many, "modal")).toHaveLength(100);
   });
 });
+
+describe("sanitize inside nested blocks", () => {
+  const empty = { type: "section", text: { type: "mrkdwn", text: "" } };
+  const ok = { type: "section", text: { type: "mrkdwn", text: "ok" } };
+
+  it("cleans container children and drops a container left empty", () => {
+    expect(sanitize([{ type: "container", title: { type: "plain_text", text: "T" }, child_blocks: [empty, ok] }])).toEqual([
+      { type: "container", title: { type: "plain_text", text: "T" }, child_blocks: [ok] },
+    ]);
+    expect(sanitize([{ type: "container", title: { type: "plain_text", text: "T" }, child_blocks: [empty] }])).toEqual([]);
+  });
+
+  it("cleans layout items and drops empty rows and layouts", () => {
+    expect(sanitize([{ type: "layout", label: "L", rows: [{ items: [{ block: empty }, { block: ok }] }, { items: [{ block: empty }] }] }])).toEqual([
+      { type: "layout", label: "L", rows: [{ items: [{ block: ok }] }] },
+    ]);
+    expect(sanitize([{ type: "layout", label: "L", rows: [{ items: [{ block: empty }] }] }])).toEqual([]);
+  });
+
+  it("drops a card with no title and an empty body, and a carousel left with no cards", () => {
+    const card = (title: string, body?: string) => ({
+      type: "card",
+      title: { type: "mrkdwn", text: title },
+      ...(body !== undefined ? { body: { type: "mrkdwn", text: body } } : {}),
+    });
+    expect(sanitize([card("a", " ")])).toEqual([card("a")]);
+    expect(sanitize([{ type: "carousel", elements: [card(""), card("b")] }])).toEqual([{ type: "carousel", elements: [card("b")] }]);
+    expect(sanitize([{ type: "carousel", elements: [card("")] }])).toEqual([]);
+  });
+});

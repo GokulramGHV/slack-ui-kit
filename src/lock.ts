@@ -83,6 +83,29 @@ function freezeBlock(block: Block): Block[] {
       const value = chosen(accessory);
       return [rest, ...(value !== undefined ? [{ type: "section", text: md(line(plain(accessory.placeholder), value)) }] : [])];
     }
+    case "card": {
+      const { actions, ...rest } = block;
+      const links = (actions ?? []).filter(isLink);
+      return [links.length ? { ...rest, actions: links } : rest];
+    }
+    case "carousel":
+      return [{ ...block, elements: (block.elements ?? []).flatMap(freezeBlock) }];
+    case "container":
+      return [{ ...block, child_blocks: freeze(block.child_blocks ?? []) }];
+    case "layout":
+      // A layout item holds one block, so keep the frozen block itself and drop any "chosen" line.
+      return [
+        {
+          ...block,
+          rows: (block.rows ?? []).map((r: Block) => ({
+            ...r,
+            items: (r.items ?? []).flatMap((it: Block) => {
+              const [first] = freezeBlock(it.block ?? {});
+              return first ? [{ ...it, block: first }] : [];
+            }),
+          })),
+        },
+      ];
     case "data_table":
       return [
         {

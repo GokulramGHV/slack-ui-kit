@@ -7,6 +7,7 @@ import { library as stock } from "@openuidev/channels/slack";
 import { z } from "zod";
 import { blocks, type Align, type Cell, type TaskInput } from "./blocks.js";
 import type { ComponentChanges } from "./openui/library.js";
+import type { Block } from "./sanitize.js";
 
 const text = (v: unknown) => (v == null ? "" : String(v));
 const optional = (v: unknown) => (v == null || v === "" ? undefined : String(v));
@@ -59,6 +60,9 @@ export const Plan = defineBlockComponent({
   },
 });
 
+/** OpenUI's walk, typed as Slack blocks. */
+const walk = (ctx: { walk: (n: unknown) => unknown[] }, nodes: unknown): Block[] => ctx.walk(nodes) as Block[];
+
 const isElement = (n: any) => !!n && typeof n === "object" && n.type === "element";
 
 /** Replaces OpenUI's Table: same output for text cells, plus number cells and alignment. */
@@ -92,10 +96,147 @@ export const DataTable = defineBlockComponent({
   render: ({ props, ctx }) => {
     const caption = text(props.caption);
     const rows: Cell[][] = (props.rows ?? []).map((r: any) =>
-      (Array.isArray(r) ? r : []).map((c: any): Cell => (isElement(c) ? (ctx.walk(c)[0] ?? "") : typeof c === "number" ? c : text(c))),
+      (Array.isArray(r) ? r : []).map((c: any): Cell => (isElement(c) ? (walk(ctx, c)[0] ?? "") : typeof c === "number" ? c : text(c))),
     );
     if (!caption.trim() || !rows.length) return [];
     return [blocks.dataTable(caption, (props.headers ?? []).map(text), rows, { pageSize: props.pageSize ?? undefined })];
+  },
+});
+
+const S = stock.components;
+const buttonRefs = [S.Button.ref, S.LinkButton.ref] as const;
+
+export const Card = defineBlockComponent({
+  name: "Card",
+  description:
+    'A card with a title, optional body text and up to 3 buttons. Use several in a Carousel. A Button on a card should @Set a $variable naming that card, so the bot knows which one was pressed: Card("api", "12 commits ahead", [Button("Open", Action([@Set($picked, "api")]))]).',
+  props: z.object({
+    title: z.string(),
+    body: z.string().nullable().optional(),
+    actions: z.array(z.union(buttonRefs)).nullable().optional(),
+  }),
+  render: ({ props, ctx }) => {
+    if (!text(props.title).trim()) return [];
+    return [blocks.card({ title: text(props.title), body: optional(props.body), actions: walk(ctx, props.actions ?? []) })];
+  },
+});
+
+export const Carousel = defineBlockComponent({
+  name: "Carousel",
+  description: "1 to 10 Cards side by side that scroll sideways. e.g. Carousel([Card(...), Card(...)]).",
+  props: z.object({ cards: z.array(Card.ref) }),
+  render: ({ props, ctx }) => {
+    const cards = walk(ctx, props.cards ?? []);
+    return cards.length ? [blocks.carousel(cards)] : [];
+  },
+});
+
+export const Tag = defineBlockComponent({
+  name: "Tag",
+  description: 'One colored label inside Tags. color: "gray", "brown", "purple", "indigo", "blue", "green", "yellow", "orange" or "red".',
+  props: z.object({ text: z.string(), color: z.string().nullable().optional() }),
+  render: () => [],
+});
+
+export const Tags = defineBlockComponent({
+  name: "Tags",
+  description: 'A row of colored labels, e.g. for statuses: Tags([Tag("ready", "green"), Tag("skipped", "orange")]).',
+  props: z.object({ tags: z.array(Tag.ref) }),
+  render: ({ props }) => {
+    const list = (props.tags ?? []).map((n: any) => ({ text: text(n?.props?.text), color: optional(n?.props?.color) as any })).filter((t: any) => t.text.trim());
+    return list.length ? [blocks.tags(list)] : [];
+  },
+});
+
+const childRefs = [S.Header.ref, S.Section.ref, S.Fields.ref, S.Context.ref, S.Divider.ref, S.Image.ref, S.Markdown.ref, S.RichText.ref, Table.ref, Tags.ref] as const;
+
+export const Container = defineBlockComponent({
+  name: "Container",
+  description:
+    "A titled group of up to 10 display blocks (no buttons or inputs), optionally collapsible and collapsed at first. Use for details people may want to hide: Container(\"Details\", [Section(...), Table(...)], true, true).",
+  props: z.object({
+    title: z.string(),
+    children: z.array(z.union(childRefs)),
+    collapsible: z.boolean().nullable().optional(),
+    collapsed: z.boolean().nullable().optional(),
+  }),
+  render: ({ props, ctx }) => {
+    const children = walk(ctx, props.children ?? []);
+    if (!children.length) return [];
+    return [blocks.container(text(props.title), children, { collapsible: !!props.collapsible, collapsed: !!props.collapsed })];
+  },
+});
+
+export const Layout = defineBlockComponent({
+  name: "Layout",
+  description:
+    'A grid of Sections: 1 to 5 rows of 1 to 3 Sections each, with an optional line between rows. Use for side by side facts: Layout("Summary", [[Section("*Stage*\\nBuild"), Section("*Services*\\n3")]], true).',
+  props: z.object({
+    label: z.string(),
+    rows: z.array(z.array(z.union([S.Section.ref, S.Fields.ref]))),
+    gridLines: z.boolean().nullable().optional(),
+  }),
+  render: ({ props, ctx }) => {
+    const rows = (props.rows ?? []).map((r: any) => walk(ctx, Array.isArray(r) ? r : [])).filter((r: any[]) => r.length);
+    return rows.length ? [blocks.layout(text(props.label), rows, { gridLines: !!props.gridLines })] : [];
+  },
+});
+
+export const Feedback = defineBlockComponent({
+  name: "Feedback",
+  description:
+    'Thumbs up and down buttons so readers can rate an answer. Anyone may press them by default and they never lock the card. Optional labels: Feedback("Helpful", "Not helpful").',
+  props: z.object({ positive: z.string().nullable().optional(), negative: z.string().nullable().optional() }),
+  render: ({ props, node, ctx }) => [
+    blocks.feedback({ actionId: ctx.idFor(node, "feedback"), positive: optional(props.positive), negative: optional(props.negative) }),
+  ],
+});
+
+export const Alert = defineBlockComponent({
+  name: "Alert",
+  description: 'A notice shown inside a Form, above or between fields. level: "info", "warning", "error" or "success". e.g. Alert("This cannot be undone.", "warning").',
+  props: z.object({ text: z.string(), level: z.string().nullable().optional() }),
+  render: () => [],
+});
+
+/** A notice inside a form: shown before the field at index `before` (or at the end). */
+export type FormNotice = { before: number; text: string; level?: string };
+
+/** Replaces OpenUI's Form: the same, plus Alert among the fields. Alerts are saved on the form spec as `notices`. */
+export const Form = defineBlockComponent({
+  name: "Form",
+  description: `${S.Form.description} Fields may include an Alert for a warning or note.`,
+  props: z.object({
+    title: z.string(),
+    submit: z.string(),
+    fields: z.array(
+      z.union([
+        S.TextInput.ref,
+        S.TextArea.ref,
+        S.NumberInput.ref,
+        S.EmailInput.ref,
+        S.URLInput.ref,
+        S.Select.ref,
+        S.MultiSelect.ref,
+        S.DatePicker.ref,
+        S.TimePicker.ref,
+        S.DateTimePicker.ref,
+        Alert.ref,
+      ]),
+    ),
+    action: z.any().optional(),
+  }),
+  render: ({ props, node, ctx }) => {
+    const notices: FormNotice[] = [];
+    const inputs: unknown[] = [];
+    for (const f of props.fields ?? []) {
+      if ((f as any)?.typeName === "Alert") {
+        const t = text((f as any).props?.text);
+        if (t.trim()) notices.push({ before: inputs.length, text: t, ...(optional((f as any).props?.level) ? { level: text((f as any).props.level) } : {}) });
+      } else inputs.push(f);
+    }
+    const inner = notices.length ? { ...ctx, registerForm: (id: string, spec: any) => ctx.registerForm(id, { ...spec, notices }) } : ctx;
+    return (S.Form as any).component({ props: { ...props, fields: inputs }, node, ctx: inner });
   },
 });
 
@@ -106,8 +247,16 @@ export const KIT_COMPONENTS: ComponentChanges = {
     { component: TaskCard, slots: ["Root"] },
     Source,
     { component: DataTable, slots: ["Root"] },
+    { component: Card, slots: ["Root"] },
+    { component: Carousel, slots: ["Root"] },
+    { component: Container, slots: ["Root"] },
+    { component: Layout, slots: ["Root"] },
+    { component: Feedback, slots: ["Root"] },
+    { component: Tags, slots: ["Root"] },
+    Tag,
+    Alert,
   ],
-  override: [Table],
+  override: [Table, Form],
 };
 
 const nameOf = (entry: any): string | undefined => entry?.component?.name ?? entry?.name;

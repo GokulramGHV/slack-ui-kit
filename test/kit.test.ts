@@ -391,3 +391,25 @@ describe("components remove", () => {
     expect(kit.prompt).toContain("TaskCard(");
   });
 });
+
+describe("forms with an Alert", () => {
+  const SRC = `root = Root([f])
+$note = ""
+f = Form("Release", "Start", [Alert("This releases to everyone.", "warning"), TextInput("Note", $note), Alert("Takes about a minute.")])`;
+
+  it("shows the alerts in the modal in their places, and keys errors on the first input", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, SRC, { owner: "U1", placeholder: false });
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: "form:f" }));
+    const view = client.calls.find((c) => c.method === "views.open")!.args.view;
+    expect(view.blocks.map((b: any) => b.type)).toEqual(["alert", "input", "alert"]);
+    expect(view.blocks[0]).toEqual({ type: "alert", level: "warning", text: { type: "mrkdwn", text: "This releases to everyone." } });
+
+    const r: any = await kit.handleViewSubmission(client, {
+      type: "view_submission",
+      user: { id: "U2" },
+      view: { ...view, state: { values: { $note: { $note: { type: "plain_text_input", value: "x" } } } } },
+    });
+    expect(r.response).toEqual({ response_action: "errors", errors: { $note: "Only <@U1> can do this." } });
+  });
+});

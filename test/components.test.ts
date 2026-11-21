@@ -89,3 +89,86 @@ dt = DataTable("", ["a"], [["1"]])`)).toEqual([]);
 dt = DataTable("Repos", ["a"], [])`)).toEqual([]);
   });
 });
+
+describe("Card and Carousel", () => {
+  const SRC = `root = Root([c])
+$pick = ""
+c = Carousel([Card("api", "12 commits", [Button("Open", Action([@Set($pick, "api")]))]), Card("ui", "3 commits", [Button("Open", Action([@Set($pick, "ui")])), LinkButton("Docs", "https://example.com")])])`;
+
+  it("render cards whose buttons are registered as buttons, and tell Claude to name the card", async () => {
+    const r = await engine.renderState(SRC);
+    const [c] = r.output as any[];
+    expect(c.type).toBe("carousel");
+    expect(c.elements[0]).toEqual({
+      type: "card",
+      title: { type: "mrkdwn", text: "api" },
+      body: { type: "mrkdwn", text: "12 commits" },
+      actions: [{ type: "button", action_id: "el_0", text: { type: "plain_text", text: "Open" } }],
+    });
+    expect(c.elements[1].actions[1]).toMatchObject({ url: "https://example.com" });
+    expect(Object.keys(r.actionMap)).toEqual(["el_0", "el_1"]);
+    expect((await engine.applyInteraction(SRC, r.state, { actionId: "el_1" })).state.$pick).toBe("ui");
+    expect(buildPrompt(library)).toMatch(/Card\([^\n]*@Set/);
+  });
+
+  it("render nothing for a card with no title or a carousel with no cards", async () => {
+    expect(await render(`root = Root([c])
+c = Carousel([])`)).toEqual([]);
+    expect(await render(`root = Root([c])
+c = Card("")`)).toEqual([]);
+  });
+});
+
+describe("Container and Layout", () => {
+  it("render a collapsible container of blocks", async () => {
+    expect(await render(`root = Root([c])
+c = Container("Details", [Section("Hidden until expanded.")], true, true)`)).toEqual([accepted.container]);
+  });
+
+  it("render a layout of sections", async () => {
+    expect(await render(`root = Root([l])
+l = Layout("Summary", [[Section("*Stage*\\nCompare"), Section("*Repos*\\n5")]], true)`)).toEqual([accepted.layout]);
+  });
+
+  it("render nothing while empty", async () => {
+    expect(await render(`root = Root([c])
+c = Container("Details", [])`)).toEqual([]);
+    expect(await render(`root = Root([l])
+l = Layout("Summary", [[]])`)).toEqual([]);
+  });
+});
+
+describe("Feedback and Tags", () => {
+  it("render feedback buttons that count as feedback controls", async () => {
+    const { controlsFromRender } = await import("../src/controls.js");
+    const r = await engine.renderState(`root = Root([s, f])
+s = Section("Here is the answer.")
+f = Feedback()`);
+    expect(r.output[1]).toMatchObject({ type: "context_actions", elements: [{ type: "feedback_buttons", action_id: "f" }] });
+    expect(controlsFromRender(r)).toEqual({ f: "feedback" });
+  });
+
+  it("render a row of tags", async () => {
+    expect(await render(`root = Root([t])
+t = Tags([Tag("ready", "green"), Tag("skipped", "orange")])`)).toEqual([accepted.tags]);
+  });
+});
+
+describe("Alert in a Form", () => {
+  it("keeps the alert in the saved form spec, in place among the fields", async () => {
+    const r = await engine.renderState(`root = Root([f])
+$note = ""
+f = Form("Release", "Start", [Alert("This releases to everyone.", "warning"), TextInput("Note", $note)])`);
+    expect(r.forms.f).toMatchObject({
+      title: "Release",
+      fields: [{ target: "$note", kind: "text" }],
+      notices: [{ before: 0, text: "This releases to everyone.", level: "warning" }],
+    });
+  });
+
+  it("is not offered outside forms", () => {
+    const prompt = buildPrompt(library);
+    expect(prompt).toContain("Alert(");
+    expect(prompt).not.toMatch(/Root\(children: \([^)]*Alert/);
+  });
+});

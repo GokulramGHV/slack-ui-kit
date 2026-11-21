@@ -24,6 +24,12 @@ export function sanitize(blocks: readonly Block[], surface: Surface = "message")
   return out.slice(0, BLOCK_LIMITS[surface]);
 }
 
+const keepClean = (list: readonly Block[] | undefined): Block[] =>
+  (list ?? []).flatMap((b) => {
+    const clean = sanitizeBlock(b);
+    return clean ? [clean] : [];
+  });
+
 function sanitizeBlock(block: Block): Block | undefined {
   const b: Block = { ...block };
   switch (b.type) {
@@ -39,6 +45,27 @@ function sanitizeBlock(block: Block): Block | undefined {
     case "context":
       b.elements = (b.elements ?? []).filter((e: any) => !isEmptyText(e));
       return b.elements.length ? b : undefined;
+    case "card":
+      if (isEmptyText(b.title)) return undefined;
+      if (isEmptyText(b.body)) delete b.body;
+      return b;
+    case "carousel":
+      b.elements = keepClean(b.elements);
+      return b.elements.length ? b : undefined;
+    case "container":
+      b.child_blocks = keepClean(b.child_blocks);
+      return b.child_blocks.length ? b : undefined;
+    case "layout":
+      b.rows = (b.rows ?? [])
+        .map((r: Block) => ({
+          ...r,
+          items: (r.items ?? []).flatMap((it: Block) => {
+            const block = it?.block && sanitizeBlock(it.block);
+            return block ? [{ ...it, block }] : [];
+          }),
+        }))
+        .filter((r: Block) => r.items.length);
+      return b.rows.length ? b : undefined;
     default:
       return b;
   }
