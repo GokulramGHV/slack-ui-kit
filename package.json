@@ -1,0 +1,41 @@
+{
+  "name": "slack-ui-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Slack UI kit for bots: wraps OpenUI's Slack renderer with click rules, lock on submit, click events and extra Slack blocks.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@openuidev/channels": "0.1.0",
+    "@openuidev/lang-core": "1.1.1"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.1",
+    "zod": "^4.4.3"
+  }
+}
