@@ -70,3 +70,26 @@ describe("lockedBlocks", () => {
     expect(out[0].elements[0].text).toMatch(/^Submitted by <@U2> at /);
   });
 });
+
+describe("lockedBlocks with a data table", () => {
+  it("turns row buttons into their label and keeps link cells", () => {
+    const dt = {
+      type: "data_table",
+      caption: "Repos",
+      rows: [
+        [{ type: "raw_text", text: "Repo" }, { type: "raw_text", text: "Action" }],
+        [
+          { type: "raw_text", text: "api" },
+          { type: "action_cell", element: { type: "button", action_id: "el_0", text: { type: "plain_text", text: "Diff" } } },
+        ],
+        [
+          { type: "raw_text", text: "ui" },
+          { type: "action_cell", element: { type: "button", action_id: "el_1", url: "https://example.com", text: { type: "plain_text", text: "Open" } } },
+        ],
+      ],
+    };
+    const [out] = lockedBlocks([dt], { by: "U1", at: "2026-11-22T10:00:00.000Z", label: "Diff" });
+    expect(out.rows[1][1]).toEqual({ type: "raw_text", text: "Diff" });
+    expect(out.rows[2][1]).toEqual(dt.rows[2]![1]);
+  });
+});

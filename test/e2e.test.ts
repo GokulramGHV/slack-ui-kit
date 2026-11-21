@@ -140,4 +140,30 @@ describe("offline end to end", () => {
     expect(text(card.blocks)).toContain("Ack pressed by <@U_A>");
     expect(events).toHaveLength(1);
   });
+
+  it("tells the bot which data table row was pressed, then freezes the table", async () => {
+    const events: CardEvent[] = [];
+    const kit = createSlackKit({ quiet: true, onEvent: (e) => void events.push(e) });
+    const client = fakeClient();
+    const { ts, card } = await kit.postCard(
+      client,
+      { channel: "C_TEST" },
+      `root = Root([dt])
+$service = ""
+dt = DataTable("Services behind", ["Service", "Changes", ""], [
+  ["api", 4, Button("Release", Action([@Set($service, "api")]))],
+  ["web", 2, Button("Release", Action([@Set($service, "web")]))]
+])`,
+      { owner: "U_OWNER", placeholder: false },
+    );
+    expect(card.controls).toEqual({ el_0: "button", el_1: "button" });
+
+    await kit.handleAction(client, at(ts, "U_OWNER", button("el_1", "Release")));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ control: { id: "el_1", label: "Release" }, state: { $service: "web" } });
+    const locked = (await kit.getCard("C_TEST", ts))!;
+    expect(text(locked.blocks)).not.toContain("action_cell");
+    expect(text(locked.blocks)).toContain("Release pressed by <@U_OWNER>");
+  });
 });
+

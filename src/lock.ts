@@ -55,38 +55,60 @@ export function dateToken(iso: string): string {
   return `<!date^${unix}^{date_short_pretty} at {time}|${fallback}>`;
 }
 
+const label = (el: any) => plain(el?.text) ?? "";
+const isLink = (el: any) => el?.type === "button" && !!el.url;
+
+/** One block with its live controls replaced. May return zero, one or two blocks. */
+function freezeBlock(block: Block): Block[] {
+  switch (block.type) {
+    case "actions": {
+      const keep: Block[] = [];
+      const lines: string[] = [];
+      for (const el of block.elements ?? []) {
+        if (isLink(el)) keep.push(el);
+        else {
+          const value = chosen(el);
+          if (value !== undefined) lines.push(line(plain(el.placeholder), value));
+        }
+      }
+      return [...(keep.length ? [{ ...block, elements: keep }] : []), ...(lines.length ? [{ type: "section", text: md(lines.join("\n")) }] : [])];
+    }
+    case "input": {
+      const value = chosen(block.element ?? {});
+      return value !== undefined ? [{ type: "section", text: md(line(plain(block.label), value)) }] : [];
+    }
+    case "section": {
+      if (!block.accessory?.action_id || isLink(block.accessory)) return [block];
+      const { accessory, ...rest } = block;
+      const value = chosen(accessory);
+      return [rest, ...(value !== undefined ? [{ type: "section", text: md(line(plain(accessory.placeholder), value)) }] : [])];
+    }
+    case "data_table":
+      return [
+        {
+          ...block,
+          rows: (block.rows ?? []).map((row: Block[]) =>
+            row.map((c) => (c?.type === "action_cell" && !isLink(c.element) ? { type: "raw_text", text: label(c.element) } : c)),
+          ),
+        },
+      ];
+    default:
+      return [block];
+  }
+}
+
+/** Blocks with every live control replaced by what was chosen. Link buttons and feedback stay. */
+export function freeze(blocks: readonly Block[]): Block[] {
+  return blocks.flatMap(freezeBlock);
+}
+
 /**
  * A card frozen after a submit-style click: buttons and inputs are replaced
  * with what was chosen, link buttons and feedback buttons stay, and a footer
  * says who did it and when.
  */
 export function lockedBlocks(blocks: readonly Block[], lock: LockInfo, opts: { note?: string } = {}): Block[] {
-  const out: Block[] = [];
-  for (const block of blocks) {
-    if (block.type === "actions") {
-      const keep: Block[] = [];
-      const lines: string[] = [];
-      for (const el of block.elements ?? []) {
-        if (el.type === "button" && el.url) keep.push(el);
-        else {
-          const value = chosen(el);
-          if (value !== undefined) lines.push(line(plain(el.placeholder), value));
-        }
-      }
-      if (keep.length) out.push({ ...block, elements: keep });
-      if (lines.length) out.push({ type: "section", text: md(lines.join("\n")) });
-    } else if (block.type === "input") {
-      const value = chosen(block.element ?? {});
-      if (value !== undefined) out.push({ type: "section", text: md(line(plain(block.label), value)) });
-    } else if (block.type === "section" && block.accessory && !(block.accessory.type === "button" && block.accessory.url) && block.accessory.action_id) {
-      const { accessory, ...rest } = block;
-      out.push(rest);
-      const value = chosen(accessory);
-      if (value !== undefined) out.push({ type: "section", text: md(line(plain(accessory.placeholder), value)) });
-    } else {
-      out.push(block);
-    }
-  }
+  const out = freeze(blocks);
   const what = lock.label ? `${lock.label} pressed` : "Submitted";
   out.push({ type: "context", elements: [md(`${what} by <@${lock.by}> at ${dateToken(lock.at)}`)] });
   if (opts.note) out.push({ type: "context", elements: [md(opts.note)] });

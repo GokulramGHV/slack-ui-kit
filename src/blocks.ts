@@ -18,8 +18,17 @@ export type TaskInput = {
   sources?: Source[];
 };
 
+export type Align = "left" | "center" | "right";
+/** A table cell: text, a number, or (data tables only) a Slack button element. */
+export type Cell = string | number | Block;
+
 export const LIMITS = {
   planTasks: 50,
+  tableRows: 100,
+  tableColumns: 20,
+  dataTableRows: 200,
+  dataTableColumns: 20,
+  dataTableChars: 20_000,
 } as const;
 
 const STATUSES: ReadonlySet<string> = new Set(["pending", "in_progress", "complete", "error"]);
@@ -59,4 +68,54 @@ function plan(title: string, tasks: readonly TaskInput[]): Block {
   return { type: "plan", title: String(title ?? ""), tasks: tasks.slice(0, LIMITS.planTasks).map((t, i) => taskCard(t, i)) };
 }
 
-export const blocks = { plan, taskCard, richText };
+const ALIGNS: ReadonlySet<string> = new Set(["left", "center", "right"]);
+const rawText = (text: string) => ({ type: "raw_text", text });
+const boldText = (text: string) => ({
+  type: "rich_text",
+  elements: [{ type: "rich_text_section", elements: [{ type: "text", text, style: { bold: true } }] }],
+});
+
+function cell(c: Cell): Block {
+  if (typeof c === "number") return { type: "raw_number", value: c, text: String(c) };
+  if (c && typeof c === "object") return c.type === "button" ? { type: "action_cell", element: c } : c;
+  return rawText(c == null ? "" : String(c));
+}
+
+const cellChars = (c: Block): number => String(c.text ?? c.element?.text?.text ?? "").length;
+
+/**
+ * Slack's table block. Matches OpenUI's own Table (bold header row, text
+ * cells), and adds number cells and per-column alignment.
+ */
+function table(headers: readonly string[], rows: readonly (readonly Cell[])[], opts: { align?: readonly Align[] } = {}): Block {
+  const cols = LIMITS.tableColumns;
+  const out: Block[][] = [];
+  if (headers.length) out.push(headers.slice(0, cols).map((h) => boldText(String(h ?? ""))));
+  for (const r of rows.slice(0, headers.length ? LIMITS.tableRows - 1 : LIMITS.tableRows)) {
+    out.push((Array.isArray(r) ? r : []).slice(0, cols).map((c) => cell(typeof c === "object" && c ? "" : c)));
+  }
+  const align = opts.align?.length ? { column_settings: opts.align.slice(0, cols).map((a) => ({ align: ALIGNS.has(a) ? a : "left" })) } : {};
+  return { type: "table", ...align, rows: out };
+}
+
+/**
+ * Slack's data_table block: Slack adds search, paging and full screen. The
+ * first row is the headers. Messages only, not forms. Rows past Slack's
+ * limits (200 rows, 20 columns, 20,000 characters) are left out.
+ */
+function dataTable(caption: string, headers: readonly string[], rows: readonly (readonly Cell[])[], opts: { pageSize?: number } = {}): Block {
+  const cols = LIMITS.dataTableColumns;
+  const head = headers.slice(0, cols).map((h) => rawText(String(h ?? "")));
+  let chars = head.reduce((n, c) => n + cellChars(c), 0);
+  const body: Block[][] = [];
+  for (const r of rows.slice(0, LIMITS.dataTableRows)) {
+    const row = (Array.isArray(r) ? r : []).slice(0, cols).map(cell);
+    chars += row.reduce((n, c) => n + cellChars(c), 0);
+    if (chars > LIMITS.dataTableChars) break;
+    body.push(row);
+  }
+  const pageSize = opts.pageSize && opts.pageSize > 0 ? { page_size: Math.floor(opts.pageSize) } : {};
+  return { type: "data_table", caption: String(caption ?? ""), ...pageSize, rows: [head, ...body] };
+}
+
+export const blocks = { plan, taskCard, richText, table, dataTable };
