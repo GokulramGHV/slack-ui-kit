@@ -11,6 +11,7 @@ const card = (over: Partial<CardRecord> = {}): CardRecord => ({
   kind: "openui",
   source: 'root = Root([])',
   state: {},
+  text: "card",
   blocks: [],
   controls: {},
   forms: {},

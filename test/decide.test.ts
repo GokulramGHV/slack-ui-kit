@@ -11,6 +11,7 @@ const card = (over: Partial<CardRecord> = {}): CardRecord => ({
   kind: "openui",
   source: "",
   state: {},
+  text: "card",
   blocks: [],
   controls: { go: "button", pick: "input", fb: "feedback", "form:note": "form" },
   forms: {},

@@ -7,7 +7,7 @@
  * Adapted from @openuidev/channels, Copyright (c) 2011-2024 Thesys Inc.,
  * MIT License. See NOTICE.
  */
-import { createEngine, MemoryStore } from "@openuidev/channels";
+import { MemoryStore } from "@openuidev/channels";
 import type { MessageRef, MessageStore, RenderResult } from "@openuidev/channels";
 import {
   buildModal,
@@ -15,15 +15,14 @@ import {
   inputValue,
   isChartBlock,
   isChartPlaceholder,
-  slackChannel,
   viewValues,
 } from "@openuidev/channels/slack";
 import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
-import { sanitize } from "../sanitize.js";
+import { createCardEngine } from "./engine.js";
 import type { SlackLibrary } from "./library.js";
 import { buildPrompt } from "./prompt.js";
 
-const PLACEHOLDER_TEXT = "Designing your card…";
+export const PLACEHOLDER_TEXT = "Designing your card…";
 
 /**
  * A card that could not be shown. The placeholder message has already been
@@ -43,7 +42,7 @@ export class CardRenderError extends Error {
   }
 }
 
-const failureText = (code?: string) => `Couldn't show this card${code ? ` (${code})` : ""}.`;
+export const failureText = (code?: string) => `Couldn't show this card${code ? ` (${code})` : ""}.`;
 
 export type DeliverArgs = {
   client: any;
@@ -81,7 +80,7 @@ export type SlackUI = {
 };
 
 /** Strip a Markdown code fence if the model wrapped its program in one. */
-function stripFences(s: string): string {
+export function stripFences(s: string): string {
   const trimmed = s.trim();
   const fenced = trimmed.match(/^```(?:[\w-]+)?\s*\n([\s\S]*?)\n```$/);
   return (fenced ? fenced[1]! : trimmed).trim();
@@ -104,18 +103,8 @@ async function defaultDeliver({ client, channel, ts, result }: DeliverArgs): Pro
 export function createSlackUI(opts: SlackUIOptions): SlackUI {
   const store = opts.store ?? new MemoryStore();
   const deliver = opts.deliver ?? defaultDeliver;
-  const channel = { ...slackChannel, library: opts.library };
-  const raw = createEngine(channel, { toolProvider: opts.tools?.provider });
-  // Every render is cleaned (see sanitize), so neither deliver nor the caller sees empty text.
-  const clean = (r: RenderResult<SlackBlock[]>): RenderResult<SlackBlock[]> => ({ ...r, output: sanitize(r.output) });
-  const engine = {
-    renderState: async (source: string, state?: Record<string, unknown>) => clean(await raw.renderState(source, state)),
-    applyInteraction: async (source: string, state: Record<string, unknown>, interaction: Parameters<typeof raw.applyInteraction>[2]) =>
-      clean(await raw.applyInteraction(source, state, interaction)),
-    submitForm: async (source: string, state: Record<string, unknown>, formId: string, patch: Record<string, unknown>) =>
-      clean(await raw.submitForm(source, state, formId, patch)),
-  };
-  const previewEngine = createEngine(channel, { quiet: true });
+  const engine = createCardEngine(opts.library, { tools: opts.tools });
+  const previewEngine = createCardEngine(opts.library, { quiet: true });
   const specs = opts.tools?.specs.map((s) => ({ ...s, outputSchema: s.outputSchema ?? {} }));
   const prompt = buildPrompt(opts.library, { tools: specs, rules: opts.rules });
   const ref = (conversationId: string, messageId: string): MessageRef => ({

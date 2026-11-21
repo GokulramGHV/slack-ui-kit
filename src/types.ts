@@ -48,6 +48,8 @@ export type CardRecord = {
   kind: "openui" | "blocks";
   source?: string;
   state: Record<string, unknown>;
+  /** Notification fallback text for the message. */
+  text: string;
   /** The last blocks written to the message; used to undo a refused click. */
   blocks: Block[];
   /** action id -> control kind, from the last render. Clicks on ids not here are ignored. */
@@ -82,4 +84,6 @@ export type CardEvent = {
   state: Record<string, unknown>;
   locked?: LockInfo;
   meta?: Record<string, unknown>;
+  /** Set when the click was committed but the card's own update failed afterwards. */
+  error?: string;
 };
