@@ -1,4 +1,8 @@
+import type { RenderResult } from "@openuidev/channels";
 import type { Block } from "./sanitize.js";
+
+/** An OpenUI form spec, saved so a form opens without rendering again. */
+export type FormSpec = RenderResult<unknown>["forms"][string];
 
 /** Who may use a control. */
 export type Rule = "owner" | "anyone" | { group: string } | { users: string[] };
@@ -46,6 +50,10 @@ export type CardRecord = {
   state: Record<string, unknown>;
   /** The last blocks written to the message; used to undo a refused click. */
   blocks: Block[];
+  /** action id -> control kind, from the last render. Clicks on ids not here are ignored. */
+  controls: Record<string, ControlKind>;
+  /** form id -> spec, from the last render. */
+  forms: Record<string, FormSpec>;
   locked?: LockInfo;
   /** Save counter for the version check. Not the template version (that goes in meta). */
   version: number;

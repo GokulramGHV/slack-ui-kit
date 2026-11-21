@@ -12,6 +12,8 @@ const card = (over: Partial<CardRecord> = {}): CardRecord => ({
   source: 'root = Root([])',
   state: {},
   blocks: [],
+  controls: {},
+  forms: {},
   version: 1,
   createdAt: "2026-11-22T00:00:00.000Z",
   ...over,
