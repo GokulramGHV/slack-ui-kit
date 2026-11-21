@@ -23,7 +23,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "live-test": "npm run build && node scripts/live-test.mjs"
   },
   "dependencies": {
     "@openuidev/channels": "0.1.0",
