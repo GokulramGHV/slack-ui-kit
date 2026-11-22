@@ -193,20 +193,27 @@ If you call `decide` and `applyDecision` yourself instead of the kit's
 handlers, open forms with `formModal(spec, privateMetadata, callbackId)`.
 OpenUI's `buildModal` doesn't know about alerts.
 
-### Not confirmed yet
+### Confirmed in Slack, and not yet
 
 Block shapes come from a live Slack test on 2026-11-22 (saved in
-`test/fixtures/accepted-blocks.json`). These still need the live test
-(`npm run live-test`):
+`test/fixtures/accepted-blocks.json`). The kit's own live test
+(`npm run live-test`, 2026-11-22) then confirmed:
 
-- Clicks on card buttons, data table row buttons and feedback buttons.
-- Alert inside a modal (Slack refused it in a message).
-- TaskCard `output`, Container holding blocks other than a section, and
-  Layout items other than a section.
+- Every component renders, including TaskCard `output` and sources, a link
+  button on a card, and a Container holding a section and tags.
+- Owner clicks on card buttons and data table row buttons, and a form submit,
+  each saving state, locking the card and sending one event.
+- Alert inside a modal, with level "warning".
+- A TaskCard on its own may not be "pending"; the kit posts it as a one-task Plan.
+
+Still to confirm:
+
+- A refused click from someone other than the owner.
+- Clicks on feedback buttons.
 - Alert levels other than "warning". If Slack refuses a modal with an alert,
   the kit opens the form again without alerts. Whether Slack accepts the same
-  `trigger_id` a second time is also unconfirmed.
-- Link buttons in cards and data table cells, and empty table cells.
+  `trigger_id` a second time is unconfirmed.
+- Link buttons in data table cells, and empty table cells.
 
 Card icon, hero image and subtitle are left out until they are tested.
 
