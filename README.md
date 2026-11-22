@@ -203,7 +203,7 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
   button on a card, and a Container holding a section and tags.
 - Owner clicks on card buttons and data table row buttons, and a form submit,
   each saving state, locking the card and sending one event.
-- Alert inside a modal, with level "warning".
+- Alert inside a modal, at every level: default, info, warning, error, success.
 - A feedback click: one event with value "positive" or "negative", no lock.
 - A TaskCard on its own may not be "pending"; the kit posts it as a one-task Plan.
 - A button press from someone other than the owner: refused with a private
@@ -213,12 +213,11 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
   redraw sends the same blocks, so the kit gives the block holding the input a
   new `block_id` on that redraw.
 - The owner's press after that: the card locks and the bot gets one event.
-
-Still to confirm:
-- Alert levels other than "warning". If Slack refuses a modal with an alert,
-  the kit opens the form again without alerts. Whether Slack accepts the same
-  `trigger_id` a second time is unconfirmed.
-- Link buttons in data table cells, and empty table cells.
+- If Slack refuses a modal with an alert, the kit opens the form again without
+  alerts, and Slack accepts the same `trigger_id` the second time.
+- Link buttons in data table cells.
+- Empty table cells. Slack refuses a cell with empty text, so the kit puts one
+  space in it.
 
 Card icon, hero image and subtitle are left out until they are tested.
 
