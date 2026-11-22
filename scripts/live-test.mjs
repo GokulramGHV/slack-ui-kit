@@ -24,6 +24,10 @@ import { createSlackKit } from "../dist/index.js";
 import { clickCards, renderChecks } from "./live-cards.mjs";
 
 const dry = process.argv.includes("--dry");
+const flag = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+// --only=a,b posts just those cards, with no label messages. --thread=TS posts into an existing thread.
+const only = flag("only")?.split(",");
+const thread = flag("thread");
 const env = (name) => {
   const v = process.env[name];
   if (!v && !dry) throw new Error(`Set ${name}.`);
@@ -61,8 +65,9 @@ function slackClient(token) {
 
 // ---------- What to post (scripts/live-cards.mjs) ----------
 
-const RENDER_CHECKS = renderChecks(owner);
-const CLICK_CARDS = clickCards();
+const pick = (cards) => (only ? Object.fromEntries(Object.entries(cards).filter(([k]) => only.includes(k))) : cards);
+const RENDER_CHECKS = pick(renderChecks(owner));
+const CLICK_CARDS = pick(clickCards());
 
 // ---------- Run ----------
 
@@ -71,7 +76,8 @@ async function main() {
   if (!dry && typeof WebSocket === "undefined") throw new Error("Needs Node 22 or newer (built-in WebSocket) to listen for clicks.");
   if (!dry) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const count = 1 + 2 * (Object.keys(RENDER_CHECKS).length + Object.keys(CLICK_CARDS).length);
+    const cards = Object.keys(RENDER_CHECKS).length + Object.keys(CLICK_CARDS).length;
+    const count = (thread ? 0 : 1) + (only ? cards : 2 * cards);
     const answer = await rl.question(`This posts ${count} messages in one thread in ${channel}. Type yes to go on: `);
     rl.close();
     if (answer.trim() !== "yes") return console.log("Stopped. Nothing was posted.");
@@ -81,13 +87,13 @@ async function main() {
     form: { callbackId: "slack_ui_kit_live_test" },
     onEvent: (e) => console.log("EVENT", JSON.stringify(e)),
   });
-  const parent = await client.chat.postMessage({ channel, text: `slack-ui-kit live test ${new Date().toISOString()}` });
+  const parent = thread ? { ts: thread } : await client.chat.postMessage({ channel, text: `slack-ui-kit live test ${new Date().toISOString()}` });
   const target = { channel, threadTs: parent.ts };
 
   const results = [];
   for (const [name, src] of Object.entries({ ...RENDER_CHECKS, ...CLICK_CARDS })) {
     try {
-      await client.chat.postMessage({ channel, thread_ts: parent.ts, text: name, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: `*${name}*` }] }] });
+      if (!only) await client.chat.postMessage({ channel, thread_ts: parent.ts, text: name, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: `*${name}*` }] }] });
       await kit.postCard(client, target, src, { owner, trusted: true, placeholder: false, meta: { check: name } });
       results.push(["OK  ", name]);
     } catch (e) {

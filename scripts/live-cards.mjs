@@ -44,5 +44,12 @@ f = Feedback("Helpful", "Not helpful")`,
 $note = ""
 s = Section("Form with an Alert in the modal. Note: " + $note)
 f = Form("Add a note", "Save", [Alert("This is a test alert.", "warning"), TextInput("Note", $note)])`,
+  refusal_check: `root = Root([s, pick, acts])
+$picks = ["api"]
+$choice = ""
+s = Section("Refusal check. Someone other than the owner clicks first. Choice: " + $choice)
+pick = Checkboxes("services", $picks, [Option("api", "api"), Option("web", "web")])
+acts = Actions([go])
+go = Button("Go", Action([@Set($choice, "go")]), "primary")`,
 });
 

@@ -92,3 +92,16 @@ describe("sanitize buttons with no label", () => {
     expect(dt[0]!.rows[0][0]).toEqual({ type: "raw_text", text: "" });
   });
 });
+
+describe("sanitize options with no label", () => {
+  const opt = (value: string, text: string) => ({ text: { type: "plain_text", text }, value });
+
+  it("drops them from inputs, and drops an input left with no options", () => {
+    const box = { type: "checkboxes", action_id: "p", options: [opt("api", "api"), opt("web", "")], initial_options: [opt("web", "")] };
+    expect(sanitize([{ type: "actions", elements: [box] }])).toEqual([
+      { type: "actions", elements: [{ type: "checkboxes", action_id: "p", options: [opt("api", "api")] }] },
+    ]);
+    const empty = { type: "static_select", action_id: "s", options: [opt("a", "")], initial_option: opt("a", "") };
+    expect(sanitize([{ type: "actions", elements: [empty] }])).toEqual([]);
+  });
+});

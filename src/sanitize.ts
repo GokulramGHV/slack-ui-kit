@@ -27,6 +27,25 @@ export function sanitize(blocks: readonly Block[], surface: Surface = "message")
 /** False for a button whose label is empty (a half-written Button("...")). Other elements pass. */
 const labelled = (el: any): boolean => el?.type !== "button" || !isEmptyText(el.text);
 
+const hasLabel = (o: any) => !isEmptyText(o?.text);
+
+/**
+ * Drop options with empty text (a half-written Option("...")). An input left
+ * with no options is dropped. Elements without options pass unchanged.
+ */
+function cleanOptions(el: Block): Block | undefined {
+  if (!Array.isArray(el?.options)) return el;
+  const e: Block = { ...el, options: el.options.filter(hasLabel) };
+  if (!e.options.length) return undefined;
+  const values = new Set(e.options.map((o: any) => o.value));
+  if (Array.isArray(e.initial_options)) {
+    e.initial_options = e.initial_options.filter((o: any) => hasLabel(o) && values.has(o.value));
+    if (!e.initial_options.length) delete e.initial_options;
+  }
+  if (e.initial_option && !(hasLabel(e.initial_option) && values.has(e.initial_option.value))) delete e.initial_option;
+  return e;
+}
+
 const keepClean = (list: readonly Block[] | undefined): Block[] =>
   (list ?? []).flatMap((b) => {
     const clean = sanitizeBlock(b);
@@ -44,12 +63,21 @@ function sanitizeBlock(block: Block): Block | undefined {
         b.fields = b.fields.filter((f: any) => !isEmptyText(f));
         if (!b.fields.length) delete b.fields;
       }
+      if (b.accessory) {
+        const accessory = labelled(b.accessory) ? cleanOptions(b.accessory) : undefined;
+        if (accessory) b.accessory = accessory;
+        else delete b.accessory;
+      }
       return b.text || b.fields || b.accessory ? b : undefined;
+    case "input": {
+      const element = cleanOptions(b.element);
+      return element ? { ...b, element } : undefined;
+    }
     case "context":
       b.elements = (b.elements ?? []).filter((e: any) => !isEmptyText(e));
       return b.elements.length ? b : undefined;
     case "actions":
-      b.elements = (b.elements ?? []).filter(labelled);
+      b.elements = (b.elements ?? []).filter(labelled).flatMap((el: Block) => cleanOptions(el) ?? []);
       return b.elements.length ? b : undefined;
     case "card":
       if (isEmptyText(b.title)) return undefined;
