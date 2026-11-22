@@ -87,11 +87,30 @@ describe("handleAction", () => {
     const { kit, client } = setup();
     const { ts, card } = await kit.postCard(client, target, SAMPLE_CARD, { owner: "U1", placeholder: false });
     await kit.handleAction(client, tick(ts, "U2", ["beta"]));
-    expect(client.calls.slice(1)).toEqual([
+    expect(client.calls.slice(1)).toMatchObject([
       { method: "chat.postEphemeral", args: { channel: "C1", user: "U2", text: "Only <@U1> can do this.", thread_ts: target.threadTs } },
-      { method: "chat.update", args: { channel: "C1", ts, text: card.text, blocks: card.blocks } },
+      { method: "chat.update", args: { channel: "C1", ts, text: card.text } },
     ]);
     expect((await kit.getCard("C1", ts))!.state.$picks).toEqual(["alpha"]);
+  });
+
+  // Slack keeps a tick on the clicker's screen when the update carries the same blocks.
+  // A new block_id on the block holding the input makes Slack draw it fresh.
+  it("gives the input's block a new block_id on each refusal redraw, and leaves other blocks as they were", async () => {
+    const { kit, client } = setup();
+    const { ts, card } = await kit.postCard(client, target, SAMPLE_CARD, { owner: "U1", placeholder: false });
+    await kit.handleAction(client, tick(ts, "U2", ["beta"]));
+    await kit.handleAction(client, tick(ts, "U3", ["beta"]));
+    const [first, second] = client.calls.filter((c) => c.method === "chat.update").map((c) => c.args.blocks);
+    const holdsInput = (b: any) => JSON.stringify(b).includes('"checkboxes"');
+    const i = card.blocks.findIndex(holdsInput);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(first[i].block_id).toEqual(expect.any(String));
+    expect(second[i].block_id).not.toBe(first[i].block_id);
+    const { block_id: _drop, ...rest } = first[i];
+    expect(rest).toEqual(card.blocks[i]);
+    card.blocks.forEach((b, j) => { if (j !== i) expect(first[j]).toEqual(b); });
+    expect((await kit.getCard("C1", ts))!.blocks).toEqual(card.blocks);
   });
 
   it("refuses someone else's button without redrawing", async () => {

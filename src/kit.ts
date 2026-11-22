@@ -164,6 +164,16 @@ export type SlackKit = {
   handleViewSubmission(client: SlackClient, payload: unknown): Promise<SubmissionResult>;
 };
 
+/** A block that holds a checkbox, select, picker or other input Slack keeps state for on screen. */
+function holdsInput(b: Block): boolean {
+  const isInput = (e: any) => !!e && typeof e.type === "string" && e.type !== "button" && e.type !== "image" && e.type !== "feedback_buttons";
+  const blk = b as any;
+  if (blk.type === "input") return true;
+  if (blk.type === "actions") return (blk.elements ?? []).some(isInput);
+  if (blk.type === "section") return isInput(blk.accessory);
+  return false;
+}
+
 export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
   const store = opts.store ?? new MemoryCardStore();
   const library: SlackLibrary = extendLibrary(withKitComponents(opts.components));
@@ -202,8 +212,18 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
   const tell = (client: SlackClient, card: CardRecord, user: string, text: string) =>
     client.chat.postEphemeral({ channel: card.channel, user, text, ...(card.threadTs ? { thread_ts: card.threadTs } : {}) });
 
-  /** Put the stored blocks back, undoing what Slack already changed on the clicker's screen. */
-  const redraw = (client: SlackClient, card: CardRecord) => write(client, card, card.blocks).catch(() => {});
+  /**
+   * Put the stored blocks back, undoing what Slack already changed on the clicker's screen.
+   * Slack keeps a tick or a pick on screen when the update carries the same blocks, so each
+   * block holding an input gets a new block_id, which makes Slack draw it fresh. The kit never
+   * reads block_id on message cards, and the stored blocks stay as they were.
+   */
+  let redraws = 0;
+  const redraw = (client: SlackClient, card: CardRecord) => {
+    const fresh = `r${now().getTime().toString(36)}${(++redraws).toString(36)}`;
+    const blocks = card.blocks.map((b, i) => (holdsInput(b) ? { ...b, block_id: `${fresh}_${i}` } : b));
+    return write(client, card, blocks).catch(() => {});
+  };
 
   // ---------- Events ----------
 
