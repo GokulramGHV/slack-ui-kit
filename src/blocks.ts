@@ -7,6 +7,7 @@ import type { Block } from "./sanitize.js";
 
 export type TaskStatus = "pending" | "in_progress" | "complete" | "error";
 export type Source = { label: string; url: string };
+/** One task. A task_card on its own may not be "pending" (Slack refuses it); inside a plan it may. */
 export type TaskInput = {
   /** Slack's task_id. Defaults to t1, t2, ... in a plan. */
   id?: string;

@@ -32,7 +32,9 @@ export const TaskCard = defineBlockComponent({
   }),
   render: ({ props, node, ctx }) => {
     if (!text(props.title).trim()) return [];
-    return [blocks.taskCard(taskFrom(props, ctx.idFor(node, "task")))];
+    const task = blocks.taskCard(taskFrom(props, ctx.idFor(node, "task")));
+    // Slack refuses a lone task_card with status "pending" but accepts it inside a plan.
+    return [task.status === "pending" ? { type: "plan", title: task.title, tasks: [task] } : task];
   },
 });
 

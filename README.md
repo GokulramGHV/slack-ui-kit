@@ -166,7 +166,7 @@ returning whether a row changed. `MemoryCardStore` is for tests and simple bots.
 | Component | OpenUI Lang | Notes |
 | --- | --- | --- |
 | Plan | `Plan(title, [TaskCard...])` | up to 50 tasks |
-| TaskCard | `TaskCard(title, status, details?, output?, [Source(label, url)]?)` | pending, in_progress, complete, error |
+| TaskCard | `TaskCard(title, status, details?, output?, [Source(label, url)]?)` | pending, in_progress, complete, error; alone and pending, it posts as a one-task Plan |
 | Table | `Table(headers, rows, align?)` | number cells, `["left", "right"]` |
 | DataTable | `DataTable(caption, headers, rows, pageSize?)` | cells: text, number, Button; messages only |
 | Card | `Card(title, body?, [Button...]?)` | up to 3 buttons |
@@ -201,7 +201,6 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
 
 - Clicks on card buttons, data table row buttons and feedback buttons.
 - Alert inside a modal (Slack refused it in a message).
-- A TaskCard on its own with status pending (only tested inside a Plan).
 - TaskCard `output`, Container holding blocks other than a section, and
   Layout items other than a section.
 - Alert levels other than "warning". If Slack refuses a modal with an alert,

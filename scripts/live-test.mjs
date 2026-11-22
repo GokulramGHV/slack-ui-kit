@@ -91,7 +91,8 @@ async function main() {
       await kit.postCard(client, target, src, { owner, trusted: true, placeholder: false, meta: { check: name } });
       results.push(["OK  ", name]);
     } catch (e) {
-      results.push(["FAIL", name, e.slackError ?? e.data?.error ?? e.message, JSON.stringify(e.cause?.data?.response_metadata ?? "")]);
+      const data = e.cause?.data ?? e.data;
+      results.push(["FAIL", name, e.slackError ?? data?.error ?? e.message, JSON.stringify(data?.response_metadata ?? data ?? "")]);
     }
   }
   for (const r of results) console.log(...r);

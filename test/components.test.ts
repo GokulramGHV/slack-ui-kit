@@ -172,3 +172,19 @@ f = Form("Release", "Start", [Alert("This releases to everyone.", "warning"), Te
     expect(prompt).not.toMatch(/Root\(children: \([^)]*Alert/);
   });
 });
+
+describe("TaskCard alone with status pending", () => {
+  // Slack refuses a lone task_card with status "pending" (live test, 2026-11-22):
+  // "must be a valid enum value" at /status. Pending is accepted inside a plan.
+  it("renders as a one-task plan, which Slack accepts", async () => {
+    expect(await render(`root = Root([t])
+t = TaskCard("Waiting for review", "pending")`)).toEqual([
+      { type: "plan", title: "Waiting for review", tasks: [{ type: "task_card", task_id: "t", title: "Waiting for review", status: "pending" }] },
+    ]);
+  });
+
+  it("keeps other statuses as a lone task card", async () => {
+    expect(await render(`root = Root([t])
+t = TaskCard("Built", "complete")`)).toEqual([{ type: "task_card", task_id: "t", title: "Built", status: "complete" }]);
+  });
+});
