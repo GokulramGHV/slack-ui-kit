@@ -208,11 +208,13 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
 - A TaskCard on its own may not be "pending"; the kit posts it as a one-task Plan.
 - A button press from someone other than the owner: refused with a private
   note, no event, no lock.
+- A checkbox tick from someone other than the owner: refused with a private
+  note, and the tick goes away on their screen. Slack keeps the tick if the
+  redraw sends the same blocks, so the kit gives the block holding the input a
+  new `block_id` on that redraw.
+- The owner's press after that: the card locks and the bot gets one event.
 
 Still to confirm:
-
-- A refused checkbox or select change from someone other than the owner, and
-  the redraw that undoes it.
 - Alert levels other than "warning". If Slack refuses a modal with an alert,
   the kit opens the form again without alerts. Whether Slack accepts the same
   `trigger_id` a second time is unconfirmed.
