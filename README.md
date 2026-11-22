@@ -204,12 +204,12 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
 - Owner clicks on card buttons and data table row buttons, and a form submit,
   each saving state, locking the card and sending one event.
 - Alert inside a modal, with level "warning".
+- A feedback click: one event with value "positive" or "negative", no lock.
 - A TaskCard on its own may not be "pending"; the kit posts it as a one-task Plan.
 
 Still to confirm:
 
 - A refused click from someone other than the owner.
-- Clicks on feedback buttons.
 - Alert levels other than "warning". If Slack refuses a modal with an alert,
   the kit opens the form again without alerts. Whether Slack accepts the same
   `trigger_id` a second time is unconfirmed.
