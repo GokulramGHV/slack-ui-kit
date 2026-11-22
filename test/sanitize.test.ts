@@ -89,7 +89,7 @@ describe("sanitize buttons with no label", () => {
       { type: "card", title: { type: "mrkdwn", text: "a" } },
     ]);
     const dt = sanitize([{ type: "data_table", caption: "x", rows: [[{ type: "action_cell", element: button("") }]] }]);
-    expect(dt[0]!.rows[0][0]).toEqual({ type: "raw_text", text: "" });
+    expect(dt[0]!.rows[0][0]).toEqual({ type: "raw_text", text: " " });
   });
 });
 

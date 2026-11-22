@@ -160,3 +160,14 @@ describe("blocks.table with wrong input", () => {
     expect(blocks.table(["a"], [["1"]], { align: "left" as any })).not.toHaveProperty("column_settings");
   });
 });
+
+// Slack refuses a raw_text cell with empty text (live test, 2026-11-22).
+describe("empty table cells", () => {
+  const texts = (b: any) => b.rows.flat().map((c: any) => c.text ?? c.elements?.[0]?.elements?.[0]?.text);
+
+  it("never sends empty text in a table or data table cell", () => {
+    for (const b of [blocks.table(["", "Note"], [["api", ""], ["web", null as any]]), blocks.dataTable("x", ["", "Note"], [["api", ""], ["web", null as any]])]) {
+      for (const t of texts(b)) expect(String(t).length).toBeGreaterThan(0);
+    }
+  });
+});

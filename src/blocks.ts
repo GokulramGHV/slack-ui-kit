@@ -78,10 +78,13 @@ function plan(title: string, tasks: readonly TaskInput[]): Block {
 }
 
 const ALIGNS: ReadonlySet<string> = new Set(["left", "center", "right"]);
-const rawText = (text: string) => ({ type: "raw_text", text });
+/** Slack refuses a table cell with empty text, so an empty cell holds one space. */
+export const EMPTY_CELL_TEXT = " ";
+const cellText = (text: string) => (text === "" ? EMPTY_CELL_TEXT : text);
+const rawText = (text: string) => ({ type: "raw_text", text: cellText(text) });
 const boldText = (text: string) => ({
   type: "rich_text",
-  elements: [{ type: "rich_text_section", elements: [{ type: "text", text, style: { bold: true } }] }],
+  elements: [{ type: "rich_text_section", elements: [{ type: "text", text: cellText(text), style: { bold: true } }] }],
 });
 
 function cell(c: Cell): Block {

@@ -1,3 +1,4 @@
+import { EMPTY_CELL_TEXT } from "./blocks.js";
 /**
  * Make blocks safe to send. Slack rejects a whole message (invalid_blocks)
  * when any text object has empty text, and OpenUI 0.1.0 passes those through,
@@ -89,7 +90,7 @@ function sanitizeBlock(block: Block): Block | undefined {
       return b;
     case "data_table":
       b.rows = (b.rows ?? []).map((row: Block[]) =>
-        (row ?? []).map((c) => (c?.type === "action_cell" && !labelled(c.element) ? { type: "raw_text", text: "" } : c)),
+        (row ?? []).map((c) => (c?.type === "action_cell" && !labelled(c.element) ? { type: "raw_text", text: EMPTY_CELL_TEXT } : c)),
       );
       return b;
     case "carousel":
