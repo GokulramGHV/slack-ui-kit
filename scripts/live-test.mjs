@@ -52,13 +52,25 @@ function slackClient(token) {
       body: JSON.stringify(args),
     });
     const data = await res.json();
-    if (!data.ok) throw Object.assign(new Error(`${method}: ${data.error}`), { data });
+    if (!data.ok) {
+      console.log("SLACK FAIL", method, data.error, JSON.stringify(data.response_metadata ?? ""));
+      throw Object.assign(new Error(`${method}: ${data.error}`), { data });
+    }
     return data;
   };
   const m = (name) => (args) => call(name, args);
+  // The alert_retry card: give its alert a level Slack refuses, so the kit's retry
+  // (the same trigger_id, no alerts) runs against real Slack.
+  const openView = async (args) => {
+    const forced = JSON.stringify(args.view ?? {}).includes("FORCE_REFUSE");
+    const view = forced ? { ...args.view, blocks: args.view.blocks.map((b) => (b.type === "alert" ? { ...b, level: "bogus" } : b)) } : args.view;
+    const r = await call("views.open", { ...args, view });
+    console.log("OPEN ok", forced ? "(forced alert was accepted)" : "", view.blocks.filter((b) => b.type === "alert").map((b) => b.level ?? "default").join(","));
+    return r;
+  };
   return {
     chat: { postMessage: m("chat.postMessage"), update: m("chat.update"), delete: m("chat.delete"), postEphemeral: m("chat.postEphemeral") },
-    views: { open: m("views.open") },
+    views: { open: openView },
     usergroups: { users: { list: m("usergroups.users.list") } },
   };
 }

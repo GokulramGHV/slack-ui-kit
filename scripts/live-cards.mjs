@@ -26,6 +26,11 @@ t = Tags([Tag("ready", "green"), Tag("skipped", "orange"), Tag("blocked", "red")
   feedback: `root = Root([s, f])
 s = Section("A bot answer to rate.")
 f = Feedback()`,
+  data_table_links: `root = Root([d])
+d = DataTable("Links", ["Service", "Docs"], [["api", LinkButton("Docs", "https://example.com/api")], ["web", LinkButton("Docs", "https://example.com/web")]])`,
+  empty_cells: `root = Root([t, d])
+t = Table(["Service", "Note"], [["api", ""], ["web", null], ["worker", "ok"]])
+d = DataTable("Empty cells", ["Service", "Note"], [["api", ""], ["web", null], ["worker", "ok"]])`,
 });
 
 export const clickCards = () => ({
@@ -44,6 +49,14 @@ f = Feedback("Helpful", "Not helpful")`,
 $note = ""
 s = Section("Form with an Alert in the modal. Note: " + $note)
 f = Form("Add a note", "Save", [Alert("This is a test alert.", "warning"), TextInput("Note", $note)])`,
+  alert_levels: `root = Root([s, f])
+$note = ""
+s = Section("Alert levels: default, info, error, success. Note: " + $note)
+f = Form("Alert levels", "Save", [Alert("Default level."), Alert("Info level.", "info"), Alert("Error level.", "error"), Alert("Success level.", "success"), TextInput("Note", $note)])`,
+  alert_retry: `root = Root([s, f])
+$note = ""
+s = Section("Alert retry. The test script makes Slack refuse the first modal; the form should open again without the alert. Note: " + $note)
+f = Form("Alert retry", "Save", [Alert("FORCE_REFUSE", "warning"), TextInput("Note", $note)])`,
   refusal_check: `root = Root([s, pick, acts])
 $picks = ["api"]
 $choice = ""
