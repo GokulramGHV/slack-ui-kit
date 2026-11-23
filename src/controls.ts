@@ -44,3 +44,35 @@ export function controlsFromBlocks(blocks: readonly Block[]): Controls {
   });
   return controls;
 }
+
+const CHOICE_TYPES = new Set(["radio_buttons", "checkboxes", "static_select", "multi_static_select", "overflow"]);
+
+/**
+ * Shown option text of each $state variable bound to a choice input. Keys carry the `$`, like
+ * the card's state. A value that matches no option is left out. Undefined when nothing is found.
+ */
+export function stateLabelsFromRender(
+  result: Pick<RenderResult<Block[]>, "output" | "actionMap">,
+  state: Record<string, unknown>,
+): Record<string, string | string[]> | undefined {
+  const out: Record<string, string | string[]> = {};
+  eachElement(result.output, (el) => {
+    const entry = result.actionMap?.[el.action_id];
+    if (!entry || entry.kind !== "input" || !CHOICE_TYPES.has(el.type)) return;
+    const key = entry.target.startsWith("$") ? entry.target : `$${entry.target}`;
+    const current = state[key] ?? state[entry.target];
+    const options: any[] = [...(el.options ?? []), ...(el.option_groups ?? []).flatMap((g: any) => g.options ?? [])];
+    const textOf = (v: unknown): string | undefined => {
+      const t = options.find((o) => o?.value === v)?.text?.text;
+      return typeof t === "string" ? t : undefined;
+    };
+    if (Array.isArray(current)) {
+      const texts = current.map(textOf).filter((t): t is string => t !== undefined);
+      if (texts.length) out[key] = texts;
+    } else {
+      const t = textOf(current);
+      if (t !== undefined) out[key] = t;
+    }
+  });
+  return Object.keys(out).length ? out : undefined;
+}

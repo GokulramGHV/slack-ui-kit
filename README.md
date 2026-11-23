@@ -160,6 +160,7 @@ type CardEvent = {
   user: string;
   control: { id; kind: "button" | "input" | "feedback" | "form"; label?; value?; labels? };
   state: Record<string, unknown>;   // the card's state after the click
+  stateLabels?: Record<string, string | string[]>; // shown option text for choices held in state
   locked?: { by; at; label };
   meta?: Record<string, unknown>;   // what you passed in
   error?: string;                   // the work after the lock failed
@@ -173,6 +174,15 @@ chosen), under the same keys as `control.value`; text, date and other fields get
 none. On an input click it is `{ [control.id]: text }` (or a list for
 checkboxes). Buttons have no `labels`, and it is left out when nothing is chosen.
 Use it to show choices to people, since `value` is only the option's id.
+
+`labels` covers the pressed control and submitted form fields. `stateLabels`
+covers the card's state: for every `$state` variable bound to a choice input
+(radio, checkboxes, select, multi-select, overflow) it holds the shown option
+text for the variable's value after the click, under the same `$` keys as
+`state`. So a person who picks "Large" in a radio and then presses Confirm gives
+you `state.$size = "l"` and `stateLabels.$size = "Large"`. Values that match no
+option are left out, the field is omitted when empty, and cards of raw blocks
+(`registerCard`) have no `stateLabels`. The text is as rendered, not unescaped.
 
 Events fire for buttons, feedback and form submits. Pass `events: "all"` to
 also get input changes. The event fires even if updating the message in Slack

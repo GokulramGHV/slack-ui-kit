@@ -65,6 +65,7 @@ function chosenLabels(el: any): string | string[] | undefined {
   switch (el?.type) {
     case "static_select":
     case "radio_buttons":
+    case "overflow":
       return text(el.selected_option);
     case "multi_static_select":
     case "checkboxes": {

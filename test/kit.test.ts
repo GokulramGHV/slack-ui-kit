@@ -135,6 +135,7 @@ describe("handleAction", () => {
         user: "U1",
         control: { id: "go", kind: "button", label: "Go" },
         state: card.state,
+        stateLabels: { $picks: ["Alpha"] },
         locked: card.locked,
         meta: { bot: "helper" },
       },

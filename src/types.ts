@@ -98,6 +98,12 @@ export type CardEvent = {
   };
   /** The card's $state after the click. */
   state: Record<string, unknown>;
+  /**
+   * Shown option text for each $state variable bound to a choice input (radio, checkboxes, select,
+   * multi select, overflow), for its value after the click. Keyed like `state`. Values that match no
+   * option are left out; absent when empty and on raw-block cards.
+   */
+  stateLabels?: Record<string, string | string[]>;
   locked?: LockInfo;
   meta?: Record<string, unknown>;
   /** Set when the click was committed but the card's own update failed afterwards. */

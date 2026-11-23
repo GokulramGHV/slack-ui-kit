@@ -11,7 +11,7 @@ import { createCardPreview, FORM_CALLBACK_ID, inputValue, isChartBlock } from "@
 import type { SlackTools } from "@openuidev/channels/slack";
 import type { GroupResolver } from "./access.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
-import { controlsFromBlocks, controlsFromRender } from "./controls.js";
+import { controlsFromBlocks, controlsFromRender, stateLabelsFromRender } from "./controls.js";
 import { clickFromAction, clickFromSubmission, decide, type Click, type Decision } from "./decide.js";
 import { slackGroupResolver } from "./groups.js";
 import { lockedBlocks } from "./lock.js";
@@ -236,8 +236,9 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
   // ---------- Events ----------
 
-  function eventFor(card: CardRecord, decision: Extract<Decision, { type: "apply" }>, error?: string): CardEvent {
+  async function eventFor(card: CardRecord, decision: Extract<Decision, { type: "apply" }>, error?: string): Promise<CardEvent> {
     const { click } = decision;
+    const stateLabels = await stateLabelsOf(card);
     return {
       type: click.submit ? "submit" : "action",
       card: { channel: card.channel, ts: card.ts, ...(card.threadTs ? { threadTs: card.threadTs } : {}) },
@@ -250,10 +251,25 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         ...(click.submit ? { value: click.submit.values } : click.value !== undefined ? { value: click.value } : {}),
       },
       state: card.state,
+      ...(stateLabels ? { stateLabels } : {}),
       ...(card.locked ? { locked: card.locked } : {}),
       ...(card.meta ? { meta: card.meta } : {}),
       ...(error ? { error } : {}),
     };
+  }
+
+  /**
+   * Shown option text for each $state variable bound to a choice input, read from a fresh render of
+   * the card at its current state. Cards of raw blocks keep no state, so they have none.
+   */
+  async function stateLabelsOf(card: CardRecord): Promise<Record<string, string | string[]> | undefined> {
+    if (card.kind !== "openui" || card.source === undefined) return undefined;
+    try {
+      const r = await previewEngine.renderState(card.source, card.state);
+      return stateLabelsFromRender(r, card.state);
+    } catch {
+      return undefined;
+    }
   }
 
   async function fire(event: CardEvent, card: CardRecord) {
@@ -511,7 +527,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       }
       case "apply": {
         if (decision.kind === "feedback") {
-          const event = eventFor(card, decision);
+          const event = await eventFor(card, decision);
           return { decision, done: decision.notify ? fire(event, card).then(() => result({ event })) : Promise.resolve(result()) };
         }
         let base = card;
@@ -602,7 +618,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     } catch (e) {
       updateError = e; // the click is committed; the bot must still hear about it
     }
-    const event = decision.notify || error ? eventFor(next, decision, error) : undefined;
+    const event = decision.notify || error ? (await eventFor(next, decision, error)) : undefined;
     if (event) await fire(event, next);
     return result({ card: next, ...(event ? { event } : {}), ...(updateError ? { updateError } : {}) });
   }
