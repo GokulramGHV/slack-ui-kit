@@ -114,8 +114,9 @@ access: {
 
 `postCard(..., { state: { title: "Hi" } })` sets the card's starting `$state`,
 merged over the defaults the source declares (`$title = ""`). Keys may be
-written with or without the `$`. The state is saved on the card, so later
-clicks keep it.
+written with or without the `$` (`render(source, state)` takes both too). The
+state is saved on the card, so later clicks keep it. Read it back with the `$`:
+`card.state.$title`, `event.state.$pick`.
 
 ## Lock
 
@@ -138,7 +139,7 @@ the model to `@Set` a `$variable` naming the row or card, so the event's
 ### Required answers
 
 `postCard(..., { required: [["pick"], ["reason", "other"]] })` lists groups of
-`$state` variable names (without `$`). A group is met when at least one of its
+`$state` variable names (with or without `$`). A group is met when at least one of its
 variables is non-empty (not null, not blank text, not an empty list). A click
 that would lock the card is refused until every group is met, counting the
 changes the press itself makes (its `@Set`s, the inputs Slack sent with it, or
@@ -146,7 +147,9 @@ a form's submitted values). A refused click saves nothing, fires no event and
 runs no tools. The clicker gets a private note (`messages.answerFirst`, default
 "Please answer every question first.") and the card is redrawn; a form submit
 gets the same text as a field error. Input changes that don't lock are not
-checked. The groups are saved on the card as `required`.
+checked. If a press is refused, the inputs it carried (such as text typed
+without Enter) are saved on the unlocked card and the redraw keeps them. The
+groups are saved on the card as `required`.
 
 ## Events
 

@@ -147,6 +147,39 @@ send = Button("Send", Action([@Set($sent, "yes")]))`;
     expect((await kit.getCard("C1", ts))!.locked).toBeUndefined();
   });
 
+  it("saves text that arrives only with a refused press, keeps it on screen, and locks on the next press", async () => {
+    const src = `root = Root([tb, q, Actions([send])])
+$note = ""
+$pick = ""
+tb = TextBox("Other", $note)
+q = Radio("Pick", $pick, [Option("a", "A"), Option("b", "B")])
+send = Button("Send", Action([@Set($sent, "yes")]))`;
+    const { kit, client, events } = setup();
+    const { ts } = await kit.postCard(client, target, src, { owner: "U1", placeholder: false, required: [["note"], ["pick"]] });
+    client.calls.length = 0;
+    const state = { values: { blk: { tb: { type: "plain_text_input", value: "typed" } } } };
+    await kit.handleAction(client, press(ts, { state }));
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.locked).toBeUndefined();
+    expect(card.state.$note).toBe("typed");
+    expect(events).toEqual([]);
+    expect(methods(client)).toEqual(["chat.postEphemeral", "chat.update"]);
+    expect(JSON.stringify(client.calls[1]!.args.blocks)).toContain("typed");
+    expect(JSON.stringify(card.blocks)).toContain("typed");
+    await kit.handleAction(client, pick(ts, "q", "a"));
+    await kit.handleAction(client, press(ts));
+    const done = (await kit.getCard("C1", ts))!;
+    expect(done.locked).toBeDefined();
+    expect(done.state.$note).toBe("typed");
+    expect(events).toHaveLength(1);
+  });
+
+  it("renders with bare state keys through kit.render", async () => {
+    const { kit } = setup();
+    const r = await kit.render(`$title = ""\nroot = Root([Header($title)])`, { title: "Hi" });
+    expect(r.state.$title).toBe("Hi");
+  });
+
   describe("form submits", () => {
     const FORM = `root = Root([Form("Note", "Save", [TextInput("Note", $comment)])])
 $comment = ""`;

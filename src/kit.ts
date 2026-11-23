@@ -272,7 +272,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
   /** Render OpenUI Lang without posting. */
   async function render(source: string, state?: Record<string, unknown>) {
-    const r = await engine.renderState(stripFences(source), state);
+    const r = await engine.renderState(stripFences(source), withDollar(state));
     return { blocks: blocksOf(r), text: r.text, state: r.state, controls: controlsFromRender(r), forms: r.forms };
   }
 
@@ -407,6 +407,21 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
    * card's own rules, run without tools (no slow work yet). `base` is the card with the inputs
    * Slack sent along with the press already in its state, so a lock saves them too.
    */
+  /** The check engine has no tools, so OpenUI warns about each skipped Mutation. Hide that when quiet. */
+  async function silently<T>(fn: () => Promise<T>): Promise<T> {
+    if (!opts.quiet) return fn();
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      if (typeof args[0] === "string" && args[0].startsWith("[openui] mutation")) return;
+      warn(...args);
+    };
+    try {
+      return await fn();
+    } finally {
+      console.warn = warn;
+    }
+  }
+
   async function requiredMet(card: CardRecord, click: Click, payload: any): Promise<{ met: boolean; base: CardRecord }> {
     if (!card.required?.length) return { met: true, base: card };
     let base = card;
@@ -417,12 +432,14 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         for (const block of Object.values<any>(payload?.state?.values ?? {})) Object.assign(sent, block);
         for (const [actionId, el] of Object.entries(sent)) {
           if (card.controls[actionId] !== "input" || actionId === click.actionId) continue;
-          state = (await previewEngine.applyInteraction(card.source, state, { actionId, value: inputValue(el) })).state;
+          state = (await silently(() => previewEngine.applyInteraction(card.source!, state, { actionId, value: inputValue(el) }))).state;
         }
         base = { ...card, state };
-        const r = click.submit
-          ? await previewEngine.submitForm(card.source, state, click.submit.formId, click.submit.values)
-          : await previewEngine.applyInteraction(card.source, state, { actionId: click.actionId, value: click.value });
+        const r = await silently(() =>
+          click.submit
+            ? previewEngine.submitForm(card.source!, state, click.submit.formId, click.submit.values)
+            : previewEngine.applyInteraction(card.source!, state, { actionId: click.actionId, value: click.value }),
+        );
         state = r.state;
       } catch {
         state = { ...state, ...(click.submit?.values ?? {}) };
@@ -502,12 +519,28 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
           base = check.base;
           if (!check.met) {
             if (submit) return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result()) };
+            // Keep what the press carried (text typed without Enter), unlocked, so the redraw doesn't wipe it.
+            let shown = card;
+            if (base !== card && card.source !== undefined && JSON.stringify(base.state) !== JSON.stringify(card.state)) {
+              const r = await previewEngine.renderState(card.source, base.state);
+              const kept: CardRecord = {
+                ...card,
+                text: r.text,
+                state: r.state,
+                blocks: blocksOf(r),
+                controls: controlsFromRender(r),
+                forms: r.forms,
+                version: card.version + 1,
+              };
+              if (!(await store.put(kept, card.version))) return retry();
+              shown = kept;
+            }
             return {
               decision,
               done: (async () => {
-                await tell(client, card, user, messages.answerFirst);
-                await redraw(client, card);
-                return result();
+                await tell(client, shown, user, messages.answerFirst);
+                await redraw(client, shown);
+                return result({ card: shown });
               })(),
             };
           }
