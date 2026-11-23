@@ -185,11 +185,11 @@ describe("decoded text never reaches mrkdwn or notification text raw", () => {
 
   it("the notification text of a card without a header keeps the escapes", async () => {
     const { kit, client } = setup();
-    const SRC = `root = Root([Container("&lt;!channel&gt;", [Section("body")])])`;
+    const SRC = `root = Root([Container("&lt;!channel&gt;", [Actions([go])])])\ngo = Button("Go", Action([@Set($done, "yes")]))`;
     const { card } = await kit.postCard(client, target, SRC, { owner: "U1", placeholder: false });
     const sent = client.calls.find((c) => c.method === "chat.postMessage")!.args;
-    expect(sent.text).not.toContain("<!channel>");
-    expect(card.text).not.toContain("<!channel>");
+    expect(sent.text).toBe("&lt;!channel&gt;");
+    expect(card.text).toBe("&lt;!channel&gt;");
   });
 
   it("a refused submit redraws the message from the saved state", async () => {
