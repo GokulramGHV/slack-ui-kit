@@ -22,6 +22,7 @@ export function newOpenUICard(args: {
   access?: Access;
   trusted?: boolean;
   meta?: Record<string, unknown>;
+  required?: string[][];
   now?: Now;
 }): CardRecord {
   const now = args.now ?? (() => new Date());
@@ -41,6 +42,7 @@ export function newOpenUICard(args: {
     forms: args.render.forms,
     version: 1,
     ...(args.meta ? { meta: args.meta } : {}),
+    ...(args.required?.length ? { required: args.required } : {}),
     createdAt: now().toISOString(),
   };
 }

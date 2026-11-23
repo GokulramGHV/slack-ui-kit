@@ -7,7 +7,7 @@
  * group lookup), open a form if asked, take the lock with a version check, and
  * only then run slow work (OpenUI Mutation tools), save, redraw and tell the bot.
  */
-import { createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
+import { createCardPreview, FORM_CALLBACK_ID, inputValue, isChartBlock } from "@openuidev/channels/slack";
 import type { SlackTools } from "@openuidev/channels/slack";
 import type { GroupResolver } from "./access.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
@@ -76,6 +76,7 @@ const DEFAULT_MESSAGES = {
   alreadySubmitted: "This was already submitted.",
   busy: "Someone changed this card at the same moment. Please try again.",
   failedAfterLock: "Something went wrong after this was pressed. The bot has been told.",
+  answerFirst: "Please answer every question first.",
 };
 
 export type PostTarget = { channel: string; threadTs?: string };
@@ -90,6 +91,14 @@ export type PostOptions = {
   placeholder?: boolean;
   /** Host data, returned in every event (bot id, template name and version). */
   meta?: Record<string, unknown>;
+  /** The card's starting $state, merged over the defaults the source declares ($x = ...). */
+  state?: Record<string, unknown>;
+  /**
+   * Answers needed before a click may lock the card. Each inner array is a group of
+   * $state variable names (without `$`); a group is met when at least one of them is
+   * non-empty. Saved on the card.
+   */
+  required?: string[][];
 };
 
 export type ActionResult =
@@ -257,6 +266,10 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
   // ---------- Posting ----------
 
+  /** $state keys carry a dollar sign. Accept names with or without it. */
+  const withDollar = (state?: Record<string, unknown>) =>
+    state && Object.fromEntries(Object.entries(state).map(([k, v]) => [k.startsWith("$") ? k : "$" + k, v]));
+
   /** Render OpenUI Lang without posting. */
   async function render(source: string, state?: Record<string, unknown>) {
     const r = await engine.renderState(stripFences(source), state);
@@ -285,6 +298,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         access: post.access,
         trusted: post.trusted,
         meta: post.meta,
+        required: post.required,
         now,
       });
       await store.put(card, null);
@@ -293,7 +307,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
     if (post.placeholder === false) {
       const src = stripFences(typeof source === "string" ? source : await collect(source));
-      const r = await engine.renderState(src);
+      const r = await engine.renderState(src, withDollar(post.state));
       let ts: string;
       try {
         ts = (await client.chat.postMessage({ channel: target.channel, ...thread, text: r.text, blocks: blocksOf(r) })).ts;
@@ -328,7 +342,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     const src = stripFences(raw);
     let r: Render;
     try {
-      r = await engine.renderState(src);
+      r = await engine.renderState(src, withDollar(post.state));
       await write(client, { channel: target.channel, ts, text: r.text }, blocksOf(r));
     } catch (e: any) {
       const slackError: string | undefined = e?.data?.error;
@@ -384,6 +398,39 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     const blockId = payload?.view?.blocks?.find((b: any) => b.type === "input")?.block_id;
     return { response_action: "errors" as const, errors: blockId ? { [blockId]: text } : {} };
   };
+
+  /** Whether a $state value counts as an answer: not null, not blank text, not an empty list. */
+  const answered = (v: unknown) => !(v == null || (typeof v === "string" && !v.trim()) || (Array.isArray(v) && v.length === 0));
+
+  /**
+   * Checks every required group once the click's own changes are in. The changes come from the
+   * card's own rules, run without tools (no slow work yet). `base` is the card with the inputs
+   * Slack sent along with the press already in its state, so a lock saves them too.
+   */
+  async function requiredMet(card: CardRecord, click: Click, payload: any): Promise<{ met: boolean; base: CardRecord }> {
+    if (!card.required?.length) return { met: true, base: card };
+    let base = card;
+    let state = card.state;
+    if (card.kind === "openui" && card.source !== undefined) {
+      try {
+        const sent: Record<string, any> = {};
+        for (const block of Object.values<any>(payload?.state?.values ?? {})) Object.assign(sent, block);
+        for (const [actionId, el] of Object.entries(sent)) {
+          if (card.controls[actionId] !== "input" || actionId === click.actionId) continue;
+          state = (await previewEngine.applyInteraction(card.source, state, { actionId, value: inputValue(el) })).state;
+        }
+        base = { ...card, state };
+        const r = click.submit
+          ? await previewEngine.submitForm(card.source, state, click.submit.formId, click.submit.values)
+          : await previewEngine.applyInteraction(card.source, state, { actionId: click.actionId, value: click.value });
+        state = r.state;
+      } catch {
+        state = { ...state, ...(click.submit?.values ?? {}) };
+      }
+    }
+    const met = card.required.every((group) => group.some((name) => answered(state[name.startsWith("$") ? name : "$" + name])));
+    return { met, base };
+  }
 
   /**
    * Decide and do the fast part. For a click that locks, the lock is saved
@@ -449,11 +496,25 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
           const event = eventFor(card, decision);
           return { decision, done: decision.notify ? fire(event, card).then(() => result({ event })) : Promise.resolve(result()) };
         }
+        let base = card;
         if (decision.lock) {
+          const check = await requiredMet(card, read.click, payload);
+          base = check.base;
+          if (!check.met) {
+            if (submit) return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result()) };
+            return {
+              decision,
+              done: (async () => {
+                await tell(client, card, user, messages.answerFirst);
+                await redraw(client, card);
+                return result();
+              })(),
+            };
+          }
           const lock = lockInfoFor(decision, now);
-          const claim: CardRecord = { ...card, locked: lock, version: card.version + 1 };
+          const claim: CardRecord = { ...base, locked: lock, version: card.version + 1 };
           if (!(await store.put(claim, card.version))) return retry();
-          return { decision, done: finishLocked(client, card, claim, decision, lock, result) };
+          return { decision, done: finishLocked(client, base, claim, decision, lock, result) };
         }
         // Not locking: apply, then save with a version check; on conflict start again.
         let next: CardRecord;

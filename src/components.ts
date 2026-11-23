@@ -242,6 +242,55 @@ export const Form = defineBlockComponent({
   },
 });
 
+export const Option = defineBlockComponent({
+  name: "Option",
+  description:
+    "An option inside a Select, MultiSelect, Radio, Checkboxes, or Overflow: Option(value, label, description?). The optional description (up to 75 characters) is shown under the label in Radio and Checkboxes only; other inputs ignore it.",
+  props: z.object({ value: z.string(), label: z.string(), description: z.string().nullable().optional() }),
+  render: () => [],
+});
+
+const optionRefs = z.array(Option.ref);
+
+/** Slack takes at most 75 characters in an option description. */
+const clip = (t: string) => (t.length > 75 ? `${t.slice(0, 74)}…` : t);
+
+/** Run OpenUI's own Radio or Checkboxes, then add each Option's description to the Slack option. */
+function withDescriptions(stockComponent: any, name: string) {
+  return defineBlockComponent({
+    name,
+    description: stockComponent.description,
+    // The stock props keep the reactive $variable binding; only the options now point at the kit's Option.
+    props: z.object({ ...stockComponent.props.shape, options: optionRefs }),
+    render: ({ props, node, ctx }) => {
+      const out = stockComponent.component({ props, node, ctx }) as Block[];
+      const list = (props as any).options ?? [];
+      const describe = (o: any, i: number) => {
+        const d = optional(list[i]?.props?.description)?.trim();
+        return d ? { ...o, description: { type: "plain_text", text: clip(d) } } : o;
+      };
+      const fix = (el: any) => {
+        if (!el || typeof el !== "object") return el;
+        if (el.type !== "radio_buttons" && el.type !== "checkboxes") return el;
+        const options: any[] = el.options ?? [];
+        const withD = options.map(describe);
+        const byValue = (o: any) => withD.find((x) => x.value === o.value) ?? o;
+        return {
+          ...el,
+          options: withD,
+          ...(el.initial_option ? { initial_option: byValue(el.initial_option) } : {}),
+          ...(el.initial_options ? { initial_options: el.initial_options.map(byValue) } : {}),
+        };
+      };
+      // OpenUI returns the bare input element; Root, Actions or Form wrap it in a block later.
+      return out.map(fix);
+    },
+  });
+}
+
+export const Radio = withDescriptions(S.Radio, "Radio");
+export const Checkboxes = withDescriptions(S.Checkboxes, "Checkboxes");
+
 /** Every component the kit adds to OpenUI's Slack library. */
 export const KIT_COMPONENTS: ComponentChanges = {
   add: [
@@ -258,7 +307,7 @@ export const KIT_COMPONENTS: ComponentChanges = {
     Tag,
     Alert,
   ],
-  override: [Table, Form],
+  override: [Table, Form, Option, Radio, Checkboxes],
 };
 
 /** A change entry's component name: either a component, or { component, slots }. */

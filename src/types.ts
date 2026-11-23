@@ -57,6 +57,11 @@ export type CardRecord = {
   /** form id -> spec, from the last render. */
   forms: Record<string, FormSpec>;
   locked?: LockInfo;
+  /**
+   * Groups of $state variable names (without `$`). A click that would lock the card is
+   * refused until every group has at least one non-empty variable.
+   */
+  required?: string[][];
   /** Save counter for the version check. Not the template version (that goes in meta). */
   version: number;
   meta?: Record<string, unknown>;
