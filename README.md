@@ -20,7 +20,7 @@ wraps OpenUI's Slack renderer (`@openuidev/channels` 0.1.0) and adds:
 The kit never owns the Slack connection. You pass in a client (a Bolt client
 or `@slack/web-api`'s `WebClient`) and raw Slack payloads.
 
-Name is a placeholder. Local only for now.
+Installed from GitHub release tags (for example `github:GokulramGHV/slack-ui-kit#v0.1.0`); not published to npm.
 
 ## Use
 
@@ -110,6 +110,13 @@ access: {
   input change also redraws the card, which undoes the tick on the clicker's
   screen.
 
+### Starting state
+
+`postCard(..., { state: { title: "Hi" } })` sets the card's starting `$state`,
+merged over the defaults the source declares (`$title = ""`). Keys may be
+written with or without the `$`. The state is saved on the card, so later
+clicks keep it.
+
 ## Lock
 
 With `lock: "buttons"` (the default), any action button locks the card.
@@ -127,6 +134,19 @@ submit locks.
 Buttons inside Card and DataTable get ids like `el_3`. Their descriptions tell
 the model to `@Set` a `$variable` naming the row or card, so the event's
 `state` says which one was pressed.
+
+### Required answers
+
+`postCard(..., { required: [["pick"], ["reason", "other"]] })` lists groups of
+`$state` variable names (without `$`). A group is met when at least one of its
+variables is non-empty (not null, not blank text, not an empty list). A click
+that would lock the card is refused until every group is met, counting the
+changes the press itself makes (its `@Set`s, the inputs Slack sent with it, or
+a form's submitted values). A refused click saves nothing, fires no event and
+runs no tools. The clicker gets a private note (`messages.answerFirst`, default
+"Please answer every question first.") and the card is redrawn; a form submit
+gets the same text as a field error. Input changes that don't lock are not
+checked. The groups are saved on the card as `required`.
 
 ## Events
 
@@ -147,6 +167,13 @@ Events fire for buttons, feedback and form submits. Pass `events: "all"` to
 also get input changes. The event fires even if updating the message in Slack
 failed (`updateError` is set on the result). If `onEvent` throws, the kit
 throws an `EventDeliveryError` that carries the event, so you can retry.
+
+## Option descriptions
+
+`Option(value, label, description?)`. In `Radio` and `Checkboxes` the
+description shows under the label (Slack's option `description`, clipped to 75
+characters with an ellipsis; an empty one is left out). `Select`,
+`MultiSelect` and `Overflow` ignore it.
 
 ## Store
 
