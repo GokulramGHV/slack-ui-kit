@@ -246,6 +246,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         id: click.actionId,
         kind: decision.kind,
         ...(click.label !== undefined ? { label: click.label } : {}),
+        ...(click.labels ? { labels: click.labels } : {}),
         ...(click.submit ? { value: click.submit.values } : click.value !== undefined ? { value: click.value } : {}),
       },
       state: card.state,

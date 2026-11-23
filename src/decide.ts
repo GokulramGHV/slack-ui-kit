@@ -9,6 +9,8 @@ export type Click = {
   /** Button text, used in the lock footer. */
   label?: string;
   value?: unknown;
+  /** Shown text of the chosen option(s), read from the Slack payload. */
+  labels?: Record<string, string | string[]>;
   /** True for a link button: Slack opens the URL, nothing to do. */
   url?: boolean;
   /** The Slack element type, such as "button" or "checkboxes". */
@@ -57,6 +59,37 @@ export async function decide(click: Click, card: CardRecord, ctx: DecideContext 
   return { type: "apply", click, kind, lock: kind !== "feedback" && locks(card, click, kind), notify };
 }
 
+/** Shown text of the options an input element has chosen. Undefined when it has none. */
+function chosenLabels(el: any): string | string[] | undefined {
+  const text = (o: any): string | undefined => (typeof o?.text?.text === "string" ? o.text.text : undefined);
+  switch (el?.type) {
+    case "static_select":
+    case "radio_buttons":
+      return text(el.selected_option);
+    case "multi_static_select":
+    case "checkboxes": {
+      const all = (el.selected_options ?? []).map(text).filter((t: string | undefined): t is string => t !== undefined);
+      return all.length ? all : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Labels for the fields of a submitted modal, keyed like the submit values. Undefined when none. */
+function viewLabels(view: any, values: Record<string, unknown>): Record<string, string | string[]> | undefined {
+  const out: Record<string, string | string[]> = {};
+  const state = view?.state?.values ?? {};
+  for (const blockId of Object.keys(state)) {
+    for (const actionId of Object.keys(state[blockId])) {
+      if (!(actionId in values)) continue;
+      const l = chosenLabels(state[blockId][actionId]);
+      if (l !== undefined) out[actionId] = l;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Read a block_actions payload. Undefined when it has no message, user or action. */
 export function clickFromAction(payload: any): { channel: string; ts: string; triggerId?: string; click: Click } | undefined {
   const action = payload?.actions?.[0];
@@ -65,6 +98,7 @@ export function clickFromAction(payload: any): { channel: string; ts: string; tr
   const user: string | undefined = payload?.user?.id;
   if (!action?.action_id || !channel || !ts || !user) return undefined;
   const value = action.type === "button" || action.type === "feedback_buttons" ? action.value : inputValue(action);
+  const chosen = action.type === "button" || action.type === "feedback_buttons" ? undefined : chosenLabels(action);
   return {
     channel,
     ts,
@@ -74,6 +108,7 @@ export function clickFromAction(payload: any): { channel: string; ts: string; tr
       actionId: action.action_id,
       label: action.text?.text,
       value,
+      ...(chosen !== undefined ? { labels: { [action.action_id]: chosen } } : {}),
       url: !!action.url,
       elementType: action.type,
     },
@@ -103,5 +138,11 @@ export function clickFromSubmission(
   }
   const { channel, ts, formId } = meta ?? {};
   if (typeof channel !== "string" || typeof ts !== "string" || typeof formId !== "string") return undefined;
-  return { channel, ts, click: { user, actionId: `form:${formId}`, submit: { formId, values: viewValues(view) } } };
+  const values = viewValues(view);
+  const labels = viewLabels(view, values);
+  return {
+    channel,
+    ts,
+    click: { user, actionId: `form:${formId}`, ...(labels ? { labels } : {}), submit: { formId, values } },
+  };
 }

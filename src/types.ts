@@ -84,7 +84,18 @@ export type CardEvent = {
   card: { channel: string; ts: string; threadTs?: string };
   /** Slack user id of who clicked. */
   user: string;
-  control: { id: string; kind: ControlKind; label?: string; value?: unknown };
+  control: {
+    id: string;
+    kind: ControlKind;
+    label?: string;
+    value?: unknown;
+    /**
+     * Shown text of the chosen option(s), read from the Slack payload. For a submit, one entry per
+     * choice field, keyed like `value`; for an input click, `{ [id]: text }`. Absent for buttons and
+     * when nothing is chosen.
+     */
+    labels?: Record<string, string | string[]>;
+  };
   /** The card's $state after the click. */
   state: Record<string, unknown>;
   locked?: LockInfo;

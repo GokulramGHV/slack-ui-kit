@@ -20,7 +20,7 @@ wraps OpenUI's Slack renderer (`@openuidev/channels` 0.1.0) and adds:
 The kit never owns the Slack connection. You pass in a client (a Bolt client
 or `@slack/web-api`'s `WebClient`) and raw Slack payloads.
 
-Installed from GitHub release tags (for example `github:GokulramGHV/slack-ui-kit#v0.1.1`); not published to npm.
+Installed from GitHub release tags (for example `github:GokulramGHV/slack-ui-kit#v0.1.2`); not published to npm.
 
 ## Use
 
@@ -158,13 +158,21 @@ type CardEvent = {
   type: "action" | "submit";
   card: { channel; ts; threadTs? };
   user: string;
-  control: { id; kind: "button" | "input" | "feedback" | "form"; label?; value? };
+  control: { id; kind: "button" | "input" | "feedback" | "form"; label?; value?; labels? };
   state: Record<string, unknown>;   // the card's state after the click
   locked?: { by; at; label };
   meta?: Record<string, unknown>;   // what you passed in
   error?: string;                   // the work after the lock failed
 };
 ```
+
+`control.labels` holds the text the person saw for the options they chose, read
+from the Slack payload (`Record<string, string | string[]>`). On a form submit
+it has one entry per choice field (select or multi-select with something
+chosen), under the same keys as `control.value`; text, date and other fields get
+none. On an input click it is `{ [control.id]: text }` (or a list for
+checkboxes). Buttons have no `labels`, and it is left out when nothing is chosen.
+Use it to show choices to people, since `value` is only the option's id.
 
 Events fire for buttons, feedback and form submits. Pass `events: "all"` to
 also get input changes. The event fires even if updating the message in Slack
