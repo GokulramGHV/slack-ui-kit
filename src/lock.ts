@@ -132,8 +132,12 @@ export function freeze(blocks: readonly Block[]): Block[] {
  * with what was chosen, link buttons and feedback buttons stay, and a footer
  * says who did it and when.
  */
-export function lockedBlocks(blocks: readonly Block[], lock: LockInfo, opts: { note?: string } = {}): Block[] {
+export function lockedBlocks(blocks: readonly Block[], lock: LockInfo, opts: { note?: string; closedNote?: string } = {}): Block[] {
   const out = freeze(blocks);
+  if (opts.closedNote !== undefined) {
+    out.push({ type: "context", elements: [md(opts.closedNote)] });
+    return out;
+  }
   const what = lock.label ? `${lock.label} pressed` : "Submitted";
   out.push({ type: "context", elements: [md(`${what} by <@${lock.by}> at ${dateToken(lock.at)}`)] });
   if (opts.note) out.push({ type: "context", elements: [md(opts.note)] });

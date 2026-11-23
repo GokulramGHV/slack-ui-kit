@@ -33,7 +33,13 @@ export type Access = {
 };
 
 /** Who locked a card, when (ISO time), and with which control label. */
-export type LockInfo = { by: string; at: string; label: string };
+export type LockInfo = {
+  by: string;
+  at: string;
+  label: string;
+  /** Set when the host closed the card (closeCard) instead of a click locking it. */
+  note?: string;
+};
 
 /** Everything stored for one card. (channel, ts) is the key; the card id is `channel:ts`. */
 export type CardRecord = {

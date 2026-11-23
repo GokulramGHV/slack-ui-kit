@@ -114,3 +114,24 @@ function sanitizeBlock(block: Block): Block | undefined {
       return b;
   }
 }
+
+/** `&lt;` `&gt;` `&amp;` back to `<` `>` `&`, in that order, once. */
+export const decodeEntities = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/**
+ * Decode entities in every plain_text object (button text, options and their descriptions, headers,
+ * labels, placeholders, modal titles), at any depth. mrkdwn text is left alone. Hosts escape `& < >`
+ * in data they pass in; plain_text shows entities literally, so they come back plain here. Run it
+ * once per render (running it twice would decode `&amp;lt;` all the way down); sanitize does not.
+ */
+export function decodePlainText<T>(node: T): T {
+  if (Array.isArray(node)) return node.map(decodePlainText) as unknown as T;
+  if (node && typeof node === "object") {
+    const o = node as Record<string, any>;
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(o)) out[k] = v && typeof v === "object" ? decodePlainText(v) : v;
+    if (o.type === "plain_text" && typeof o.text === "string") out.text = decodeEntities(o.text);
+    return out as T;
+  }
+  return node;
+}

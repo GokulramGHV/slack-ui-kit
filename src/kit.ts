@@ -22,7 +22,7 @@ import { formModal } from "./modal.js";
 import { notificationText } from "./fallback.js";
 import { buildPrompt } from "./openui/prompt.js";
 import { CardRenderError, failureText, PLACEHOLDER_TEXT, stripFences } from "./openui/ui.js";
-import { sanitize, type Block } from "./sanitize.js";
+import { decodePlainText, sanitize, type Block } from "./sanitize.js";
 import { MemoryCardStore } from "./store.js";
 import type { Access, CardEvent, CardRecord, CardStore, FormSpec } from "./types.js";
 
@@ -169,6 +169,11 @@ export type SlackKit = {
     meta?: Record<string, unknown>;
   }): Promise<CardRecord>;
   getCard(channel: string, ts: string): Promise<CardRecord | undefined>;
+  /**
+   * Lock an unlocked card without telling the bot: the same locked look as a normal lock, with
+   * `note` as the footer instead of "X pressed by". False when the card is missing or already locked.
+   */
+  closeCard(client: SlackClient, channel: string, ts: string, opts: { note: string }): Promise<boolean>;
   handleAction(client: SlackClient, payload: unknown): Promise<ActionResult>;
   handleViewSubmission(client: SlackClient, payload: unknown): Promise<SubmissionResult>;
 };
@@ -396,7 +401,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       kind: "blocks",
       text: args.text ?? notificationText(args.blocks),
       state: {},
-      blocks: sanitize(args.blocks),
+      blocks: sanitize(decodePlainText(args.blocks)),
       controls: controlsFromBlocks(args.blocks),
       forms: {},
       version: 1,
@@ -535,7 +540,28 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
           const check = await requiredMet(card, read.click, payload);
           base = check.base;
           if (!check.met) {
-            if (submit) return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result()) };
+            if (submit) {
+              // Keep what was typed, so closing and reopening the form shows it again.
+              const typed = read.click.submit!.values;
+              if (card.kind === "openui" && card.source !== undefined && Object.keys(typed).length) {
+                const state = { ...base.state, ...typed };
+                if (JSON.stringify(state) !== JSON.stringify(card.state)) {
+                  const r = await previewEngine.renderState(card.source, state);
+                  const kept: CardRecord = {
+                    ...card,
+                    text: r.text,
+                    state: r.state,
+                    blocks: blocksOf(r),
+                    controls: controlsFromRender(r),
+                    forms: r.forms,
+                    version: card.version + 1,
+                  };
+                  if (!(await store.put(kept, card.version))) return retry();
+                  return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result({ card: kept })) };
+                }
+              }
+              return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result()) };
+            }
             // Keep what the press carried (text typed without Enter), unlocked, so the redraw doesn't wipe it.
             let shown = card;
             if (base !== card && card.source !== undefined && JSON.stringify(base.state) !== JSON.stringify(card.state)) {
@@ -623,6 +649,24 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     return result({ card: next, ...(event ? { event } : {}), ...(updateError ? { updateError } : {}) });
   }
 
+  async function closeCard(client: SlackClient, channel: string, ts: string, opts: { note: string }): Promise<boolean> {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const card = await store.get(channel, ts);
+      if (!card || card.locked) return false;
+      const lock = { by: "", at: now().toISOString(), label: "", note: opts.note };
+      const closed: CardRecord = {
+        ...card,
+        locked: lock,
+        blocks: sanitize(lockedBlocks(card.blocks, lock, { closedNote: opts.note })),
+        version: card.version + 1,
+      };
+      if (!(await store.put(closed, card.version))) continue;
+      await write(client, closed, closed.blocks);
+      return true;
+    }
+    return false;
+  }
+
   /** Handle a raw block_actions payload. `{ handled: false }` when it isn't a click on a stored card. */
   async function handleAction(client: SlackClient, payload: unknown): Promise<ActionResult> {
     const read = clickFromAction(payload);
@@ -654,6 +698,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     postCard,
     registerCard,
     getCard: (channel: string, ts: string) => store.get(channel, ts),
+    closeCard,
     handleAction,
     handleViewSubmission,
   };

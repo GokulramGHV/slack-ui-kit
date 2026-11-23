@@ -146,10 +146,31 @@ changes the press itself makes (its `@Set`s, the inputs Slack sent with it, or
 a form's submitted values). A refused click saves nothing, fires no event and
 runs no tools. The clicker gets a private note (`messages.answerFirst`, default
 "Please answer every question first.") and the card is redrawn; a form submit
-gets the same text as a field error. Input changes that don't lock are not
+gets the same text as a field error, and the values typed into the form are saved
+on the card, so reopening it shows them again (only for a person who passed the
+access check; busy, already-submitted and access-refused submits save nothing). Input changes that don't lock are not
 checked. If a press is refused, the inputs it carried (such as text typed
 without Enter) are saved on the unlocked card and the redraw keeps them. The
 groups are saved on the card as `required`.
+
+### Closing a card
+
+`kit.closeCard(client, channel, ts, { note })` locks an unlocked card without
+firing an event: same version-checked save, same locked look (the chosen
+summary of the card's current state), with `note` as the footer line instead of
+"X pressed by". It resolves `true` when it closed the card, `false` when the
+card is missing or already locked. Clicks on a closed card are refused like on
+any locked card. `card.locked.note` holds the note.
+
+### Entities
+
+Slack shows `plain_text` literally. If you escape data as `&amp;` `&lt;` `&gt;`
+(the safe thing in mrkdwn), the kit decodes those three in every `plain_text`
+object it renders (button text, options and their descriptions, headers,
+labels, placeholders, modal titles), in that order and once, so
+`Fish &amp; Chips` shows as `Fish & Chips`, and `control.labels` and
+`stateLabels` come back plain. mrkdwn text is left as it is. The lock summary
+escapes plain text again for mrkdwn.
 
 ## Events
 

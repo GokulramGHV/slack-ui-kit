@@ -1,7 +1,7 @@
 import { buildModal } from "@openuidev/channels/slack";
 import { blocks, type AlertLevel } from "./blocks.js";
 import type { FormNotice } from "./components.js";
-import { sanitize, type Block } from "./sanitize.js";
+import { decodePlainText, sanitize, type Block } from "./sanitize.js";
 import type { FormSpec } from "./types.js";
 
 /**
@@ -9,7 +9,7 @@ import type { FormSpec } from "./types.js";
  * their places among the fields, cleaned and capped for a modal.
  */
 export function formModal(spec: FormSpec, privateMetadata: string, callbackId: string): Record<string, any> {
-  const view: Record<string, any> = buildModal(spec as any, privateMetadata);
+  const view: Record<string, any> = decodePlainText(buildModal(spec as any, privateMetadata));
   view.callback_id = callbackId;
   const notices: FormNotice[] = (spec as any).notices ?? [];
   if (notices.length) {

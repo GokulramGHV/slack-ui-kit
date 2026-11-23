@@ -3,7 +3,7 @@ import type { Interaction, RenderResult } from "@openuidev/channels";
 import { slackChannel } from "@openuidev/channels/slack";
 import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
 import { notificationText, OPENUI_DEFAULT_TEXT } from "../fallback.js";
-import { sanitize } from "../sanitize.js";
+import { decodePlainText, sanitize } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
 
 export type Render = RenderResult<SlackBlock[]>;
@@ -19,7 +19,7 @@ export type CardEngine = {
 export function createCardEngine(library: SlackLibrary, opts: { tools?: SlackTools; quiet?: boolean } = {}): CardEngine {
   const raw = createEngine({ ...slackChannel, library }, { toolProvider: opts.tools?.provider, quiet: opts.quiet });
   const clean = (r: Render): Render => {
-    const output = sanitize(r.output);
+    const output = sanitize(decodePlainText(r.output));
     // OpenUI only reads Header and Section for the text; cards of newer blocks would say "OpenUI message".
     const text = r.text && r.text !== OPENUI_DEFAULT_TEXT ? r.text : notificationText(output);
     return { ...r, output, text };
