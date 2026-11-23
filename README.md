@@ -160,7 +160,9 @@ firing an event: same version-checked save, same locked look (the chosen
 summary of the card's current state), with `note` as the footer line instead of
 "X pressed by". It resolves `true` when it closed the card, `false` when the
 card is missing or already locked. Clicks on a closed card are refused like on
-any locked card. `card.locked.note` holds the note.
+any locked card. `card.locked.note` holds the note. If Slack refuses the message
+update after the card was locked in the store, `closeCard` throws; the card stays
+locked and the next click on it redraws it.
 
 ### Entities
 
@@ -170,7 +172,10 @@ object it renders (button text, options and their descriptions, headers,
 labels, placeholders, modal titles), in that order and once, so
 `Fish &amp; Chips` shows as `Fish & Chips`, and `control.labels` and
 `stateLabels` come back plain. mrkdwn text is left as it is. The lock summary
-escapes plain text again for mrkdwn.
+escapes plain text again for mrkdwn. `registerCard` decodes raw blocks the same
+way, but the host posts those blocks itself: do not send entity-escaped
+`plain_text` in them, or run them through the exported `decodePlainText` before
+posting.
 
 ## Events
 

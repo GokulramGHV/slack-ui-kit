@@ -138,7 +138,7 @@ export function lockedBlocks(blocks: readonly Block[], lock: LockInfo, opts: { n
     out.push({ type: "context", elements: [md(opts.closedNote)] });
     return out;
   }
-  const what = lock.label ? `${lock.label} pressed` : "Submitted";
+  const what = lock.label ? `${esc(lock.label)} pressed` : "Submitted";
   out.push({ type: "context", elements: [md(`${what} by <@${lock.by}> at ${dateToken(lock.at)}`)] });
   if (opts.note) out.push({ type: "context", elements: [md(opts.note)] });
   return out;

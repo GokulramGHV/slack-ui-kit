@@ -20,8 +20,10 @@ export function createCardEngine(library: SlackLibrary, opts: { tools?: SlackToo
   const raw = createEngine({ ...slackChannel, library }, { toolProvider: opts.tools?.provider, quiet: opts.quiet });
   const clean = (r: Render): Render => {
     const output = sanitize(decodePlainText(r.output));
+    // Notification text is mrkdwn: build it from the output before plain_text is decoded, so escapes stay.
+    const fallbackText = () => notificationText(sanitize(r.output));
     // OpenUI only reads Header and Section for the text; cards of newer blocks would say "OpenUI message".
-    const text = r.text && r.text !== OPENUI_DEFAULT_TEXT ? r.text : notificationText(output);
+    const text = r.text && r.text !== OPENUI_DEFAULT_TEXT ? r.text : fallbackText();
     return { ...r, output, text };
   };
   return {

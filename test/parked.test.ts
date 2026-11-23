@@ -170,3 +170,50 @@ go = Button("Fish &amp; Go", Action([@Set($done, "yes")]))`;
     expect(JSON.stringify(card.blocks)).toContain("Tom & Jerry");
   });
 });
+
+describe("decoded text never reaches mrkdwn or notification text raw", () => {
+  const pt = (text: string) => ({ type: "plain_text", text });
+
+  it("a button label <!channel> is escaped in the lock footer", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, `root = Root([Actions([go])])\ngo = Button("&lt;!channel&gt;", Action([@Set($done, "yes")]))`, { owner: "U1", placeholder: false });
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: "go", text: pt("<!channel>") }));
+    const footer = JSON.stringify((await kit.getCard("C1", ts))!.blocks);
+    expect(footer).toContain("&lt;!channel&gt; pressed by");
+    expect(footer).not.toContain("<!channel>");
+  });
+
+  it("the notification text of a card without a header keeps the escapes", async () => {
+    const { kit, client } = setup();
+    const SRC = `root = Root([Container("&lt;!channel&gt;", [Section("body")])])`;
+    const { card } = await kit.postCard(client, target, SRC, { owner: "U1", placeholder: false });
+    const sent = client.calls.find((c) => c.method === "chat.postMessage")!.args;
+    expect(sent.text).not.toContain("<!channel>");
+    expect(card.text).not.toContain("<!channel>");
+  });
+
+  it("a refused submit redraws the message from the saved state", async () => {
+    const { kit, client } = setup();
+    const FORM = `root = Root([Section($name), Form("Note", "Save", [TextInput("Name", $name), TextInput("Note", $comment)])])
+$name = ""
+$comment = ""`;
+    const { card, ts } = await kit.postCard(client, target, FORM, { owner: "U1", placeholder: false, required: [["comment"]] });
+    client.calls.length = 0;
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: `form:${Object.keys(card.forms)[0]}` }));
+    const view = client.calls.find((c) => c.method === "views.open")!.args.view;
+    const inputs = view.blocks.filter((b: any) => b.type === "input");
+    const sub = {
+      type: "view_submission",
+      user: { id: "U1" },
+      view: {
+        ...view,
+        state: { values: Object.fromEntries(inputs.map((b: any, i: number) => [b.block_id, { [b.element.action_id]: { type: "plain_text_input", value: i === 0 ? "Ada" : "" } }])) },
+      },
+    };
+    client.calls.length = 0;
+    const r: any = await kit.handleViewSubmission(client, sub);
+    await r.done;
+    const update = client.calls.find((c) => c.method === "chat.update");
+    expect(JSON.stringify(update?.args.blocks)).toContain("Ada");
+  });
+});

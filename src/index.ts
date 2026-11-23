@@ -40,4 +40,5 @@ export { blocks, LIMITS, richText, type Source, type TaskInput, type TaskStatus 
 export * as components from "./components.js";
 export { formModal } from "./modal.js";
 export { notificationText } from "./fallback.js";
+export { decodePlainText, decodeEntities } from "./sanitize.js";
 export type { FormNotice } from "./components.js";

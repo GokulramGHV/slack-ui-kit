@@ -172,6 +172,8 @@ export type SlackKit = {
   /**
    * Lock an unlocked card without telling the bot: the same locked look as a normal lock, with
    * `note` as the footer instead of "X pressed by". False when the card is missing or already locked.
+   * Throws if Slack refuses the message update after the card was locked in the store; the next click
+   * on the card redraws it from the store.
    */
   closeCard(client: SlackClient, channel: string, ts: string, opts: { note: string }): Promise<boolean>;
   handleAction(client: SlackClient, payload: unknown): Promise<ActionResult>;
@@ -557,7 +559,12 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
                     version: card.version + 1,
                   };
                   if (!(await store.put(kept, card.version))) return retry();
-                  return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result({ card: kept })) };
+                  return {
+                    decision,
+                    response: errorsFor(payload, messages.answerFirst),
+                    // Draw the saved state on the message too, so values bound there are not stale.
+                    done: redraw(client, kept).then(() => result({ card: kept })),
+                  };
                 }
               }
               return { decision, response: errorsFor(payload, messages.answerFirst), done: Promise.resolve(result()) };
