@@ -87,6 +87,15 @@ describe("closeCard", () => {
 $size = ""
 go = Button("Go", Action([@Set($done, "yes")]))`;
 
+  it("escapes the note so data in it cannot mention anyone", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, CARD, { owner: "U1", placeholder: false });
+    expect(await kit.closeCard(client, "C1", ts, { note: "Replaced by <!channel> & co" })).toBe(true);
+    const text = JSON.stringify((await kit.getCard("C1", ts))!.blocks);
+    expect(text).toContain("Replaced by &lt;!channel&gt; &amp; co");
+    expect(text).not.toContain("<!channel>");
+  });
+
   it("locks an open card without an event, with the note as footer", async () => {
     const { kit, client, events } = setup();
     const { ts } = await kit.postCard(client, target, CARD, { owner: "U1", placeholder: false, state: { size: "l" } });

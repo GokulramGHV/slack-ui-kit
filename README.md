@@ -158,7 +158,8 @@ groups are saved on the card as `required`.
 `kit.closeCard(client, channel, ts, { note })` locks an unlocked card without
 firing an event: same version-checked save, same locked look (the chosen
 summary of the card's current state), with `note` as the footer line instead of
-"X pressed by". It resolves `true` when it closed the card, `false` when the
+"X pressed by". The note is plain text: the kit escapes it, so data in it
+cannot mention anyone. It resolves `true` when it closed the card, `false` when the
 card is missing or already locked. Clicks on a closed card are refused like on
 any locked card. `card.locked.note` holds the note. If Slack refuses the message
 update after the card was locked in the store, `closeCard` throws; the card stays

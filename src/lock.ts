@@ -135,7 +135,7 @@ export function freeze(blocks: readonly Block[]): Block[] {
 export function lockedBlocks(blocks: readonly Block[], lock: LockInfo, opts: { note?: string; closedNote?: string } = {}): Block[] {
   const out = freeze(blocks);
   if (opts.closedNote !== undefined) {
-    out.push({ type: "context", elements: [md(opts.closedNote)] });
+    out.push({ type: "context", elements: [md(esc(opts.closedNote))] });
     return out;
   }
   const what = lock.label ? `${esc(lock.label)} pressed` : "Submitted";
