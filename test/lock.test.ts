@@ -129,4 +129,24 @@ describe("lockedBlocks with nested blocks", () => {
     const fb = { type: "context_actions", elements: [{ type: "feedback_buttons", action_id: "f" }] };
     expect(lockedBlocks([fb], lock)[0]).toEqual(fb);
   });
+  it("escapes option text, typed text and labels in the chosen summary", () => {
+    const out = lockedBlocks(
+      [
+        {
+          type: "actions",
+          elements: [
+            { type: "radio_buttons", action_id: "q", options: [opt("0", "<!channel> & co")], initial_option: opt("0", "<!channel> & co") },
+            { type: "static_select", action_id: "s", placeholder: pt("<b>"), options: [opt("x", "<https://x.test|Approve>")], initial_option: opt("x", "<https://x.test|Approve>") },
+          ],
+        },
+        { type: "input", label: pt("Note"), element: { type: "plain_text_input", action_id: "n", initial_value: "<@U9> hi" } },
+      ],
+      lock,
+    );
+    const text = JSON.stringify(out);
+    expect(text).toContain("&lt;!channel&gt; &amp; co");
+    expect(text).toContain("*&lt;b&gt;:* &lt;https://x.test|Approve&gt;");
+    expect(text).toContain("&lt;@U9&gt; hi");
+    expect(text).not.toContain("<!channel>");
+  });
 });

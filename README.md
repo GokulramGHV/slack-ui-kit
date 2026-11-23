@@ -20,7 +20,7 @@ wraps OpenUI's Slack renderer (`@openuidev/channels` 0.1.0) and adds:
 The kit never owns the Slack connection. You pass in a client (a Bolt client
 or `@slack/web-api`'s `WebClient`) and raw Slack payloads.
 
-Installed from GitHub release tags (for example `github:GokulramGHV/slack-ui-kit#v0.1.0`); not published to npm.
+Installed from GitHub release tags (for example `github:GokulramGHV/slack-ui-kit#v0.1.1`); not published to npm.
 
 ## Use
 

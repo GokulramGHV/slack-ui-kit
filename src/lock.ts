@@ -3,10 +3,12 @@ import type { LockInfo } from "./types.js";
 
 const plain = (o: any): string | undefined => (typeof o?.text === "string" ? o.text : undefined);
 const md = (text: string) => ({ type: "mrkdwn", text });
+/** Option text, typed text and labels are plain text; escape them before they go into mrkdwn. */
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** What an input currently shows as chosen, as mrkdwn. Undefined if it isn't an input. */
 function chosen(el: Record<string, any>): string | undefined {
-  const optionText = (o: any) => plain(o?.text) ?? o?.value ?? "";
+  const optionText = (o: any) => esc(String(plain(o?.text) ?? o?.value ?? ""));
   switch (el.type) {
     case "checkboxes":
     case "multi_static_select":
@@ -39,13 +41,13 @@ function chosen(el: Record<string, any>): string | undefined {
     case "number_input":
     case "email_text_input":
     case "url_text_input":
-      return el.initial_value ?? "";
+      return esc(String(el.initial_value ?? ""));
     default:
       return undefined;
   }
 }
 
-const line = (label: string | undefined, value: string) => `*${label || "Chosen"}:* ${value || "none"}`;
+const line = (label: string | undefined, value: string) => `*${label ? esc(label) : "Chosen"}:* ${value || "none"}`;
 
 /** Slack date token, so each reader sees their own local time. */
 export function dateToken(iso: string): string {
