@@ -4,10 +4,17 @@
  */
 import { defineBlockComponent } from "@openuidev/channels";
 import { library as stock } from "@openuidev/channels/slack";
+import { markReactive } from "@openuidev/lang-core";
 import { z } from "zod";
 import { blocks, type Align, type Cell, type TaskInput } from "./blocks.js";
 import type { ComponentChanges } from "./openui/library.js";
 import type { Block } from "./sanitize.js";
+
+/** Marks a prop as bound to a $variable, as OpenUI does for its own inputs. */
+const reactive = <T extends z.ZodType>(schema: T): T => {
+  markReactive(schema);
+  return schema;
+};
 
 const text = (v: unknown) => (v == null ? "" : String(v));
 const optional = (v: unknown) => (v == null || v === "" ? undefined : String(v));
@@ -111,15 +118,27 @@ const buttonRefs = [S.Button.ref, S.LinkButton.ref] as const;
 export const Card = defineBlockComponent({
   name: "Card",
   description:
-    'A card with a title, optional body text and up to 3 buttons. Use several in a Carousel. A Button on a card should @Set a $variable naming that card, so the bot knows which one was pressed: Card("api", "12 commits ahead", [Button("Open", Action([@Set($picked, "api")]))]).',
+    'A card with a title, optional body text and up to 3 buttons. Use several in a Carousel. Args in order: title, body?, actions?, subtitle? (a line under the title, 150 characters), subtext? (small text under the body, 200 characters), icon? (an image URL). Title and subtitle are clipped at 150 characters, body and subtext at 200; Slack markdown works in all four. Use null to skip an optional arg you do not need. A Button on a card should @Set a $variable naming that card, so the bot knows which one was pressed: Card("api", "12 commits ahead", [Button("Open", Action([@Set($picked, "api")]))], "main branch", "updated 2h ago", "https://example.com/api.png").',
   props: z.object({
     title: z.string(),
     body: z.string().nullable().optional(),
     actions: z.array(z.union(buttonRefs)).nullable().optional(),
+    subtitle: z.string().nullable().optional(),
+    subtext: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
   }),
   render: ({ props, ctx }) => {
     if (!text(props.title).trim()) return [];
-    return [blocks.card({ title: text(props.title), body: optional(props.body), actions: walk(ctx, props.actions ?? []) })];
+    return [
+      blocks.card({
+        title: text(props.title),
+        body: optional(props.body),
+        actions: walk(ctx, props.actions ?? []),
+        subtitle: optional(props.subtitle),
+        subtext: optional(props.subtext),
+        icon: optional(props.icon),
+      }),
+    ];
   },
 });
 
@@ -291,6 +310,119 @@ function withDescriptions(stockComponent: any, name: string) {
 export const Radio = withDescriptions(S.Radio, "Radio");
 export const Checkboxes = withDescriptions(S.Checkboxes, "Checkboxes");
 
+/**
+ * Replaces OpenUI's NumberInput only to say it also works in Actions. The props are OpenUI's own, so
+ * the $variable binding is kept. It renders nothing itself: Form and Actions read it.
+ */
+export const NumberInput = defineBlockComponent({
+  name: "NumberInput",
+  description:
+    "A whole-number field bound to a $variable, inside a Form (shown in the modal) or inside Actions (an input on the message that saves when the user presses Enter). e.g. NumberInput(\"Points\", $points).",
+  props: (S.NumberInput as any).props,
+  render: () => [],
+});
+
+/** What a SearchSelect's state holds: items with a value and the label to show. Plain strings are accepted too. */
+export type SearchItem = { value: string; label: string };
+
+/** A state entry (string or item) as an item. Undefined when it has no value. */
+export function searchItem(v: unknown): SearchItem | undefined {
+  if (v == null || v === "") return undefined;
+  if (typeof v === "object") {
+    const o = v as { value?: unknown; label?: unknown };
+    if (o.value == null || o.value === "") return undefined;
+    return { value: String(o.value), label: o.label == null || o.label === "" ? String(o.value) : String(o.label) };
+  }
+  return { value: String(v), label: String(v) };
+}
+
+export const SearchSelect = defineBlockComponent({
+  name: "SearchSelect",
+  description:
+    'A dropdown for long lists: the options are not listed here, Slack loads them as the user types. Only inside Actions. SearchSelect(name, $chosen, source, multi?). source is a short word the bot uses to know what to search, such as "people" or "projects". multi true allows several picks (default false). $chosen holds the picks as items {value, label}: an array when multi, one item (or null) when not. Start it empty: $chosen = [] or $chosen = null. e.g. Actions([SearchSelect("Assignee", $assignee, "people")]).',
+  props: z.object({
+    name: z.string(),
+    values: reactive(z.any()),
+    source: z.string(),
+    multi: z.boolean().nullable().optional(),
+  }),
+  render: () => [],
+});
+
+/** Slack takes at most 75 characters in an option's text. */
+const clipOption = (t: string) => (t.length > 75 ? `${t.slice(0, 74)}…` : t);
+
+const plainText = (t: string) => ({ type: "plain_text", text: t });
+
+/** One input block for a NumberInput or SearchSelect inside Actions. Registers the action. */
+function messageInput(n: any, ctx: any): Block | undefined {
+  const p = n.props ?? {};
+  const id = ctx.idFor(n);
+  const target = ctx.bindTarget(p.value ?? p.values);
+  const current = target ? ctx.state[target] : undefined;
+  if (n.typeName === "NumberInput") {
+    if (target) ctx.registerAction(id, { kind: "input", target });
+    return {
+      type: "input",
+      dispatch_action: true,
+      label: plainText(text(p.label).slice(0, 2000) || "Number"),
+      element: {
+        type: "number_input",
+        action_id: id,
+        is_decimal_allowed: false,
+        ...(current != null && current !== "" ? { initial_value: text(current) } : {}),
+      },
+    };
+  }
+  // SearchSelect
+  if (target) ctx.registerAction(id, { kind: "input", target, source: text(p.source) });
+  const multi = p.multi === true;
+  const option = (i: SearchItem) => ({ text: plainText(clipOption(i.label)), value: i.value });
+  const items = (Array.isArray(current) ? current : [current]).map(searchItem).filter((i): i is SearchItem => !!i);
+  const name = text(p.name);
+  return {
+    type: "input",
+    dispatch_action: true,
+    label: plainText(name.slice(0, 2000) || "Search"),
+    element: {
+      type: multi ? "multi_external_select" : "external_select",
+      action_id: id,
+      placeholder: plainText(name.slice(0, 150) || "Search"),
+      min_query_length: 1,
+      ...(multi ? (items.length ? { initial_options: items.map(option) } : {}) : items.length ? { initial_option: option(items[0]!) } : {}),
+    },
+  };
+}
+
+const stockActions = S.Actions as any;
+const stockActionItems: unknown[] = stockActions.props.shape.items.element.options;
+
+/**
+ * Replaces OpenUI's Actions: the same row of controls, plus NumberInput and SearchSelect. Like
+ * OpenUI's multi-selects, those two get their own input block (with dispatch_action) after the row.
+ */
+export const Actions = defineBlockComponent({
+  name: "Actions",
+  description: `${stockActions.description} Also NumberInput(label, $var) for a whole number and SearchSelect(name, $var, source, multi?) for a long list searched as the user types. Form does not go inside Actions: put it in Root.`,
+  props: z.object({ items: z.array(z.union([...stockActionItems, NumberInput.ref, SearchSelect.ref] as any)) }),
+  render: ({ props, node, ctx }) => {
+    const items = ((props as any).items ?? []).slice(0, 25);
+    const mine = items.filter((n: any) => isElement(n) && (n.typeName === "NumberInput" || n.typeName === "SearchSelect"));
+    const rest = items.filter((n: any) => !mine.includes(n));
+    // Ids come from a counter, so they depend only on the source, not on the state.
+    const row: Block[] = [];
+    const inputs: Block[] = [];
+    for (const n of items) {
+      if (mine.includes(n)) {
+        const b = messageInput(n, ctx);
+        if (b) inputs.push(b);
+      }
+    }
+    if (rest.length) row.push(...(stockActions.component({ props: { ...props, items: rest }, node, ctx }) as Block[]));
+    return [...row, ...inputs];
+  },
+});
+
 /** Every component the kit adds to OpenUI's Slack library. */
 export const KIT_COMPONENTS: ComponentChanges = {
   add: [
@@ -306,8 +438,9 @@ export const KIT_COMPONENTS: ComponentChanges = {
     { component: Tags, slots: ["Root"] },
     Tag,
     Alert,
+    SearchSelect,
   ],
-  override: [Table, Form, Option, Radio, Checkboxes],
+  override: [Table, Form, Option, Radio, Checkboxes, NumberInput, Actions],
 };
 
 /** A change entry's component name: either a component, or { component, slots }. */

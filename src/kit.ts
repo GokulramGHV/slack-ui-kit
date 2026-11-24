@@ -7,15 +7,16 @@
  * group lookup), open a form if asked, take the lock with a version check, and
  * only then run slow work (OpenUI Mutation tools), save, redraw and tell the bot.
  */
-import { createCardPreview, FORM_CALLBACK_ID, inputValue, isChartBlock } from "@openuidev/channels/slack";
+import { createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
 import type { SlackTools } from "@openuidev/channels/slack";
 import type { GroupResolver } from "./access.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
 import { controlsFromBlocks, controlsFromRender, stateLabelsFromRender } from "./controls.js";
-import { clickFromAction, clickFromSubmission, decide, type Click, type Decision } from "./decide.js";
+import { clickFromAction, clickFromSubmission, decide, elementValue, type Click, type Decision } from "./decide.js";
 import { slackGroupResolver } from "./groups.js";
 import { lockedBlocks } from "./lock.js";
 import { createCardEngine, type CardEngine, type Render } from "./openui/engine.js";
+import { CardPlacementError } from "./openui/placement.js";
 import { extendLibrary, type ComponentChanges, type SlackLibrary } from "./openui/library.js";
 import { withKitComponents } from "./components.js";
 import { formModal } from "./modal.js";
@@ -41,6 +42,23 @@ export type SlackClient = {
 /** What the kit puts in a form's hidden data. */
 export type FormMeta = { channel: string; ts: string; formId: string };
 
+/** What the host's loadOptions gets for one search in a SearchSelect. */
+export type LoadOptionsArgs = {
+  /** The `source` word the card's SearchSelect was written with. */
+  source: string;
+  /** What the user has typed. */
+  query: string;
+  card: CardRecord;
+  /** Slack user id of the person searching. */
+  user: string;
+};
+
+/** One choice offered in a SearchSelect. `value` is saved into state; `label` is shown (clipped to 75 characters). */
+export type SearchOption = { value: string; label: string };
+
+/** What Slack expects back for a block_suggestion: at most 100 options. */
+export type OptionsResponse = { options: Array<{ text: { type: "plain_text"; text: string }; value: string }> };
+
 export type SlackKitOptions = {
   /** Where cards are kept (default: in memory, lost on restart). */
   store?: CardStore;
@@ -52,6 +70,11 @@ export type SlackKitOptions = {
   rules?: string[];
   /** OpenUI tools (Query/Mutation), as in OpenUI. */
   tools?: SlackTools;
+  /**
+   * Finds the options for a SearchSelect as the user types. Used by handleOptions. Without it, or if it
+   * throws, the dropdown shows no options.
+   */
+  loadOptions?: (args: LoadOptionsArgs) => Promise<SearchOption[]> | SearchOption[];
   /** Called after an allowed click or submit: this is notify_agent. */
   onEvent?: (event: CardEvent) => Promise<void> | void;
   /** "default": buttons, feedback and form submits. "all": input changes too. */
@@ -178,6 +201,12 @@ export type SlackKit = {
   closeCard(client: SlackClient, channel: string, ts: string, opts: { note: string }): Promise<boolean>;
   handleAction(client: SlackClient, payload: unknown): Promise<ActionResult>;
   handleViewSubmission(client: SlackClient, payload: unknown): Promise<SubmissionResult>;
+  /**
+   * Answer Slack's block_suggestion payload (a user typing in a SearchSelect) with the JSON Slack
+   * expects. Never throws: a refused user, an unknown card, a missing or failing loadOptions all give
+   * no options. Pass the client so a user group rule can be checked.
+   */
+  handleOptions(payload: unknown, client?: SlackClient): Promise<OptionsResponse>;
 };
 
 /** A block that holds a checkbox, select, picker or other input Slack keeps state for on screen. */
@@ -193,7 +222,7 @@ function holdsInput(b: Block): boolean {
 export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
   const store = opts.store ?? new MemoryCardStore();
   const library: SlackLibrary = extendLibrary(withKitComponents(opts.components));
-  const engine: CardEngine = createCardEngine(library, { tools: opts.tools, quiet: opts.quiet });
+  const engine: CardEngine = createCardEngine(library, { tools: opts.tools, quiet: opts.quiet, strict: true });
   const previewEngine: CardEngine = createCardEngine(library, { quiet: true });
   const specs = opts.tools?.specs.map((s) => ({ ...s, outputSchema: s.outputSchema ?? {} }));
   const prompt = buildPrompt(library, { tools: specs, rules: opts.rules });
@@ -290,13 +319,20 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
   // ---------- Posting ----------
 
+  /** A component in a place the library does not accept becomes a CardRenderError that names it; for anything else this is undefined. */
+  const placed = (e: unknown, source: string, ts: string): CardRenderError | undefined =>
+    e instanceof CardPlacementError ? new CardRenderError(e.message, { source, ts, cause: e }) : undefined;
+
   /** $state keys carry a dollar sign. Accept names with or without it. */
   const withDollar = (state?: Record<string, unknown>) =>
     state && Object.fromEntries(Object.entries(state).map(([k, v]) => [k.startsWith("$") ? k : "$" + k, v]));
 
   /** Render OpenUI Lang without posting. */
   async function render(source: string, state?: Record<string, unknown>) {
-    const r = await engine.renderState(stripFences(source), withDollar(state));
+    const src = stripFences(source);
+    const r = await engine.renderState(src, withDollar(state)).catch((e) => {
+      throw placed(e, src, "") ?? e;
+    });
     return { blocks: blocksOf(r), text: r.text, state: r.state, controls: controlsFromRender(r), forms: r.forms };
   }
 
@@ -331,7 +367,9 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
     if (post.placeholder === false) {
       const src = stripFences(typeof source === "string" ? source : await collect(source));
-      const r = await engine.renderState(src, withDollar(post.state));
+      const r = await engine.renderState(src, withDollar(post.state)).catch((e) => {
+        throw placed(e, src, "") ?? e;
+      });
       let ts: string;
       try {
         ts = (await client.chat.postMessage({ channel: target.channel, ...thread, text: r.text, blocks: blocksOf(r) })).ts;
@@ -374,7 +412,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       await client.chat
         .update({ channel: target.channel, ts, text, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: `_${text}_` }] }] })
         .catch(() => {});
-      throw new CardRenderError(text, { source: src, ts, slackError, cause: e });
+      throw placed(e, src, ts) ?? new CardRenderError(text, { source: src, ts, slackError, cause: e });
     }
     return save(ts, src, r);
   }
@@ -456,7 +494,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         for (const block of Object.values<any>(payload?.state?.values ?? {})) Object.assign(sent, block);
         for (const [actionId, el] of Object.entries(sent)) {
           if (card.controls[actionId] !== "input" || actionId === click.actionId) continue;
-          state = (await silently(() => previewEngine.applyInteraction(card.source!, state, { actionId, value: inputValue(el) }))).state;
+          state = (await silently(() => previewEngine.applyInteraction(card.source!, state, { actionId, value: elementValue(el) }))).state;
         }
         base = { ...card, state };
         const r = await silently(() =>
@@ -696,6 +734,38 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     return { handled: true, decision: started.decision, response: started.response, done: started.done };
   }
 
+  /** Handle a raw block_suggestion payload. */
+  async function handleOptions(payload: unknown, client?: SlackClient): Promise<OptionsResponse> {
+    const none: OptionsResponse = { options: [] };
+    try {
+      const p: any = payload;
+      const actionId: unknown = p?.action_id;
+      const channel: unknown = p?.channel?.id ?? p?.container?.channel_id;
+      const ts: unknown = p?.message?.ts ?? p?.container?.message_ts;
+      const user: unknown = p?.user?.id;
+      if (typeof actionId !== "string" || typeof channel !== "string" || typeof ts !== "string" || typeof user !== "string") return none;
+      if (!opts.loadOptions) return none;
+      const card = await store.get(channel, ts);
+      if (!card || card.kind !== "openui" || card.source === undefined) return none;
+      // The same rule as a click on this control: owner, group, locked.
+      const decision = await decide({ user, actionId }, card, { resolveGroup: client ? groupsFor(client) : opts.groups, events: opts.events });
+      if (decision.type !== "apply") return none;
+      const r = await previewEngine.renderState(card.source, card.state);
+      const source = (r.actionMap?.[actionId] as { source?: unknown } | undefined)?.source;
+      if (typeof source !== "string") return none;
+      const found = await opts.loadOptions({ source, query: typeof p.value === "string" ? p.value : "", card, user });
+      const options = (Array.isArray(found) ? found : []).flatMap((o) => {
+        const value = o?.value == null ? "" : String(o.value);
+        const label = o?.label == null || o.label === "" ? value : String(o.label);
+        if (!value || !label) return [];
+        return [{ text: { type: "plain_text" as const, text: label.length > 75 ? `${label.slice(0, 74)}…` : label }, value }];
+      });
+      return { options: options.slice(0, 100) };
+    } catch {
+      return none;
+    }
+  }
+
   return {
     prompt,
     library,
@@ -708,6 +778,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     closeCard,
     handleAction,
     handleViewSubmission,
+    handleOptions,
   };
 }
 

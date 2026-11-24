@@ -59,15 +59,40 @@ export async function decide(click: Click, card: CardRecord, ctx: DecideContext 
   return { type: "apply", click, kind, lock: kind !== "feedback" && locks(card, click, kind), notify };
 }
 
+/**
+ * The value an input element holds, as it is saved into $state. OpenUI's inputValue, plus number inputs
+ * (a number, or null when cleared) and search dropdowns (items { value, label }; an array for the multi one).
+ */
+export function elementValue(action: any): unknown {
+  switch (action?.type) {
+    case "number_input": {
+      const v = action.value;
+      if (v === "" || v == null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    case "external_select": {
+      const o = action.selected_option;
+      return o ? { value: o.value, label: o.text?.text ?? o.value } : null;
+    }
+    case "multi_external_select":
+      return (action.selected_options ?? []).map((o: any) => ({ value: o.value, label: o.text?.text ?? o.value }));
+    default:
+      return inputValue(action);
+  }
+}
+
 /** Shown text of the options an input element has chosen. Undefined when it has none. */
 function chosenLabels(el: any): string | string[] | undefined {
   const text = (o: any): string | undefined => (typeof o?.text?.text === "string" ? o.text.text : undefined);
   switch (el?.type) {
     case "static_select":
+    case "external_select":
     case "radio_buttons":
     case "overflow":
       return text(el.selected_option);
     case "multi_static_select":
+    case "multi_external_select":
     case "checkboxes": {
       const all = (el.selected_options ?? []).map(text).filter((t: string | undefined): t is string => t !== undefined);
       return all.length ? all : undefined;
@@ -98,7 +123,7 @@ export function clickFromAction(payload: any): { channel: string; ts: string; tr
   const ts: string | undefined = payload?.message?.ts ?? payload?.container?.message_ts;
   const user: string | undefined = payload?.user?.id;
   if (!action?.action_id || !channel || !ts || !user) return undefined;
-  const value = action.type === "button" || action.type === "feedback_buttons" ? action.value : inputValue(action);
+  const value = action.type === "button" || action.type === "feedback_buttons" ? action.value : elementValue(action);
   const chosen = action.type === "button" || action.type === "feedback_buttons" ? undefined : chosenLabels(action);
   return {
     channel,

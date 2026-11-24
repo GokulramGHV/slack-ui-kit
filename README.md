@@ -223,6 +223,74 @@ description shows under the label (Slack's option `description`, clipped to 75
 characters with an ellipsis; an empty one is left out). `Select`,
 `MultiSelect` and `Overflow` ignore it.
 
+## Search dropdowns (options loaded on demand)
+
+`SearchSelect(name, $var, source, multi?)` goes inside `Actions([...])`. Slack
+shows a search box and asks the bot for options as the user types, so a list of
+thousands costs nothing in the message. `source` is a short word you choose
+(`"people"`, `"projects"`) that tells your `loadOptions` what to search.
+
+```ts
+const kit = createSlackKit({
+  loadOptions: async ({ source, query, card, user }) => {
+    if (source === "people") return (await findPeople(query)).map((p) => ({ value: p.id, label: p.name }));
+    return [];
+  },
+});
+
+// Bolt: Slack calls this for every keystroke past min_query_length (1).
+app.options(/.*/, async ({ options, ack, client }) => ack(await kit.handleOptions(options, client)));
+```
+
+`handleOptions(payload, client?)` takes Slack's `block_suggestion` payload and
+returns `{ options: [...] }`: at most 100 options, each label clipped to 75
+characters. It applies the same rule as a click on that control (a user who may
+not use the card's inputs gets no options, and neither does anyone once the
+card is locked). If `loadOptions` is missing or throws, it returns no options
+and does not throw. Pass the client if your rules use user groups.
+
+Slack needs an options URL for this:
+
+- Socket Mode: nothing to set. Enable Interactivity and handle the
+  `block_suggestion` event (Bolt's `app.options`).
+- HTTP: in the Slack app settings under Interactivity & Shortcuts, set the
+  **Options Load URL** (it can be the same as the Request URL) and route
+  `block_suggestion` payloads to `handleOptions`.
+
+**State holds items, not bare values.** The variable holds `{ value, label }`:
+an array when `multi` is true, one item (or `null`) when not. Start it empty
+(`$people = []`, `$owner = null`) or with items. Slack's payload carries each
+pick's label, so the kit saves both; the next redraw uses the labels as the
+dropdown's initial options, and the lock summary shows them. A plain string in
+the state is read as an item whose label is its value. `required` counts a
+non-empty array or a non-null item. The event's `state` holds the items, and
+`stateLabels` has the labels (`{ $people: ["Ana", "Bo"], $owner: "Bo" }`).
+
+Like `TextBox`, changes save into state and send no event unless
+`events: "all"`; only buttons and form submits do by default.
+
+## Message size
+
+Slack refuses a message whose blocks are too large (about 10 KB;
+`msg_blocks_too_long`). Two static multi-selects of 45 options each pushed a
+modest card over. Keep a card well under that:
+
+- Use `SearchSelect` for long option lists instead of `MultiSelect`.
+- Put long text in a thread reply, not in the card.
+- A `Card` clips its text; other blocks do not.
+
+## A component the parent would drop
+
+Some parents draw only the components they accept and skip the rest. A `Form`
+inside `Actions` used to vanish without a word: OpenUI drew the card without it.
+Now `postCard` and `render` throw a `CardRenderError` that names the component
+and where it is, for example `Form is not allowed in Actions.items (at
+Root.children[0] > Actions.items[0]); Actions.items accepts only Button, ...`,
+and nothing is posted (with a placeholder, it is replaced by the short failure
+note). Put `Form` in `Root`. Only these slots are checked: `Actions.items`,
+`Form.fields` and `Section.accessory`. Other OpenUI warnings (an unknown
+component, extra arguments, a bare input in `Root`) are still just warnings.
+
 ## Store
 
 ```ts
@@ -244,7 +312,9 @@ returning whether a row changed. `MemoryCardStore` is for tests and simple bots.
 | TaskCard | `TaskCard(title, status, details?, output?, [Source(label, url)]?)` | pending, in_progress, complete, error; alone and pending, it posts as a one-task Plan |
 | Table | `Table(headers, rows, align?)` | number cells, `["left", "right"]` |
 | DataTable | `DataTable(caption, headers, rows, pageSize?)` | cells: text, number, Button; messages only |
-| Card | `Card(title, body?, [Button...]?)` | up to 3 buttons |
+| Card | `Card(title, body?, [Button...]?, subtitle?, subtext?, icon?)` | up to 3 buttons; `icon` is an image URL; title and subtitle clip at 150 characters, body and subtext at 200 |
+| NumberInput | `NumberInput(label, $var)` in `Form` or in `Actions([...])` | in `Actions` it is its own input block that saves when the user presses Enter; whole numbers; state holds a number, or null when cleared |
+| SearchSelect | `SearchSelect(name, $var, source, multi?)` in `Actions([...])` | options load as the user types, see below |
 | Carousel | `Carousel([Card...])` | 1 to 10 cards |
 | Container | `Container(title, [blocks], collapsible?, collapsed?)` | up to 10 display blocks |
 | Layout | `Layout(label, [[Section...]], gridLines?)` | 5 rows of 3 |
@@ -294,7 +364,10 @@ Block shapes come from a live Slack test on 2026-11-22 (saved in
 - Empty table cells. Slack refuses a cell with empty text, so the kit puts one
   space in it.
 
-Card icon, hero image and subtitle are left out until they are tested.
+Card `subtitle`, `subtext` and `icon`, a `number_input` and a
+`multi_external_select` in an input block with `dispatch_action` on a message
+were accepted by Slack in a later live test. The card hero image is left out
+until it is tested.
 
 ## Develop
 

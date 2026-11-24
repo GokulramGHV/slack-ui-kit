@@ -12,7 +12,7 @@ export {
   type SlackUIOptions,
   type StreamedCard,
 } from "./openui/index.js";
-export { CardRenderError } from "./openui/index.js";
+export { CardRenderError, CardPlacementError, type Misplaced } from "./openui/index.js";
 export { BLOCK_LIMITS, isEmptyText, sanitize, type Block, type Surface } from "./sanitize.js";
 export { MemoryCardStore } from "./store.js";
 export type { Access, CardEvent, CardRecord, CardStore, ControlKind, LockInfo, Rule } from "./types.js";
@@ -21,6 +21,9 @@ export {
   EventDeliveryError,
   type ActionResult,
   type FormMeta,
+  type LoadOptionsArgs,
+  type OptionsResponse,
+  type SearchOption,
   type PostOptions,
   type PostTarget,
   type SlackClient,
@@ -28,7 +31,7 @@ export {
   type SlackKitOptions,
   type SubmissionResult,
 } from "./kit.js";
-export { decide, clickFromAction, clickFromSubmission, type Click, type Decision, type DecideContext } from "./decide.js";
+export { decide, elementValue, clickFromAction, clickFromSubmission, type Click, type Decision, type DecideContext } from "./decide.js";
 export { applyDecision, newOpenUICard } from "./apply.js";
 export { isAllowed, refusalText, ruleFor, type GroupResolver } from "./access.js";
 export { slackGroupResolver, type GroupResolverOptions } from "./groups.js";

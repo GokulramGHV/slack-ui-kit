@@ -35,6 +35,10 @@ export const LIMITS = {
   containerChildren: 10,
   layoutRows: 5,
   layoutItems: 3,
+  cardTitle: 150,
+  cardSubtitle: 150,
+  cardBody: 200,
+  cardSubtext: 200,
 } as const;
 
 export type TagColor = "gray" | "brown" | "purple" | "indigo" | "blue" | "green" | "yellow" | "orange" | "red";
@@ -133,13 +137,36 @@ function dataTable(caption: string, headers: readonly string[], rows: readonly (
 const mrkdwn = (text: string) => ({ type: "mrkdwn", text });
 const plainText = (text: string) => ({ type: "plain_text", text });
 
-/** Slack's card block: a title, optional body, and up to 3 buttons. */
-function card(c: { title: string; body?: string; actions?: readonly Block[] }): Block {
+/** Clip text to `max` characters, ending in an ellipsis when it was cut. */
+const clipTo = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+export type CardInput = {
+  title: string;
+  body?: string;
+  actions?: readonly Block[];
+  /** A line under the title (mrkdwn, up to 150 characters). */
+  subtitle?: string;
+  /** Small text under the body (mrkdwn, up to 200 characters). */
+  subtext?: string;
+  /** An image URL shown on the card. */
+  icon?: string;
+};
+
+/**
+ * Slack's card block: a title, optional subtitle, body and subtext, an optional
+ * icon, and up to 3 buttons. Text past Slack's limits (title and subtitle 150
+ * characters, body and subtext 200) is clipped with an ellipsis.
+ */
+function card(c: CardInput): Block {
   const actions = (c.actions ?? []).slice(0, LIMITS.cardActions);
+  const title = clipTo(String(c.title ?? ""), LIMITS.cardTitle);
   return {
     type: "card",
-    title: mrkdwn(String(c.title ?? "")),
-    ...(filled(c.body) ? { body: mrkdwn(c.body) } : {}),
+    title: mrkdwn(title),
+    ...(filled(c.subtitle) ? { subtitle: mrkdwn(clipTo(c.subtitle, LIMITS.cardSubtitle)) } : {}),
+    ...(filled(c.body) ? { body: mrkdwn(clipTo(c.body, LIMITS.cardBody)) } : {}),
+    ...(filled(c.subtext) ? { subtext: mrkdwn(clipTo(c.subtext, LIMITS.cardSubtext)) } : {}),
+    ...(filled(c.icon) ? { icon: { type: "image", image_url: c.icon, alt_text: title.trim() ? title : "icon" } } : {}),
     ...(actions.length ? { actions } : {}),
   };
 }

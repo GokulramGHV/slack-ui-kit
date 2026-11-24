@@ -5,6 +5,7 @@ import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
 import { notificationText, OPENUI_DEFAULT_TEXT } from "../fallback.js";
 import { decodePlainText, sanitize } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
+import { CardPlacementError, placementChecker } from "./placement.js";
 
 export type Render = RenderResult<SlackBlock[]>;
 type State = Record<string, unknown>;
@@ -16,7 +17,16 @@ export type CardEngine = {
   submitForm(source: string, state: State, formId: string, patch: State): Promise<Render>;
 };
 
-export function createCardEngine(library: SlackLibrary, opts: { tools?: SlackTools; quiet?: boolean } = {}): CardEngine {
+export function createCardEngine(
+  library: SlackLibrary,
+  opts: {
+    tools?: SlackTools;
+    quiet?: boolean;
+    /** renderState throws CardPlacementError when a component sits where the library does not accept it. */
+    strict?: boolean;
+  } = {},
+): CardEngine {
+  const misplaced = opts.strict ? placementChecker(library) : undefined;
   const raw = createEngine({ ...slackChannel, library }, { toolProvider: opts.tools?.provider, quiet: opts.quiet });
   const clean = (r: Render): Render => {
     const output = sanitize(decodePlainText(r.output));
@@ -27,7 +37,11 @@ export function createCardEngine(library: SlackLibrary, opts: { tools?: SlackToo
     return { ...r, output, text };
   };
   return {
-    renderState: async (source, state) => clean(await raw.renderState(source, state)),
+    renderState: async (source, state) => {
+      const issues = misplaced?.(source) ?? [];
+      if (issues.length) throw new CardPlacementError(issues);
+      return clean(await raw.renderState(source, state));
+    },
     applyInteraction: async (source, state, interaction) => clean(await raw.applyInteraction(source, state, interaction)),
     submitForm: async (source, state, formId, patch) => clean(await raw.submitForm(source, state, formId, patch)),
   };

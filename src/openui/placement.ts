@@ -1,0 +1,109 @@
+/**
+ * Finds components placed where the library does not accept them and the parent would drop them, such
+ * as a Form inside Actions.
+ * OpenUI keeps such a component in its parse tree but its parent drops it when drawing, so without
+ * this check the card posts with the control silently missing.
+ */
+import { createParser } from "@openuidev/lang-core";
+import type { SlackLibrary } from "./library.js";
+
+export type Misplaced = {
+  /** The component that is out of place, such as "Form". */
+  component: string;
+  /** The component that holds it and the prop it sits in, such as "Actions.items". */
+  slot: string;
+  /** Where it is, from the root: "Root.children[0] > Actions.items[1]". */
+  where: string;
+  /** The component names the slot accepts. */
+  allowed: string[];
+};
+
+/** A card source that puts a component where it is not allowed. `issues` lists each one. */
+export class CardPlacementError extends Error {
+  readonly issues: Misplaced[];
+  constructor(issues: Misplaced[]) {
+    super(
+      issues
+        .map((i) => `${i.component} is not allowed in ${i.slot} (at ${i.where}); ${i.slot} accepts only ${i.allowed.join(", ")}`)
+        .join("; "),
+    );
+    this.name = "CardPlacementError";
+    this.issues = issues;
+  }
+}
+
+const isElement = (n: any) => !!n && typeof n === "object" && n.type === "element" && typeof n.typeName === "string";
+
+const refName = (s: any): string | undefined => (typeof s?.$ref === "string" ? s.$ref.split("/").pop() : undefined);
+
+/** Component names a slot accepts directly (a $ref, or a union that includes some). */
+function refsOf(s: any): string[] {
+  if (!s || typeof s !== "object") return [];
+  const own = refName(s);
+  if (own) return [own];
+  return [...(s.anyOf ?? []), ...(s.oneOf ?? [])].flatMap(refsOf);
+}
+
+/** The schema of a list slot's items, looking through a union with null. */
+function itemsOf(s: any): any {
+  if (!s || typeof s !== "object") return undefined;
+  if (s.type === "array" || (Array.isArray(s.type) && s.type.includes("array"))) return s.items;
+  for (const o of [...(s.anyOf ?? []), ...(s.oneOf ?? [])]) {
+    const i = itemsOf(o);
+    if (i) return i;
+  }
+  return undefined;
+}
+
+/**
+ * The slots whose parent draws only the components it accepts and silently skips the rest. Other
+ * parents (Root, Container, Carousel, ...) draw whatever they hold, so a mismatch there is not a drop.
+ */
+const DROPS: ReadonlySet<string> = new Set(["Actions.items", "Form.fields", "Section.accessory"]);
+
+export function placementChecker(library: SlackLibrary) {
+  const schema: any = library.toJSONSchema();
+  const defs: Record<string, any> = schema.$defs ?? {};
+  const parser = createParser(schema, library.root ?? "Root");
+
+  return function find(source: string): Misplaced[] {
+    const issues: Misplaced[] = [];
+    let root: any;
+    try {
+      root = parser.parse(source).root;
+    } catch {
+      return issues; // the engine reports unparsable text its own way
+    }
+    const seen = new Set<unknown>();
+
+    const visit = (value: any, slot: any, parent: string, prop: string, where: string) => {
+      if (isElement(value)) {
+        const allowed = refsOf(slot);
+        if (DROPS.has(`${parent}.${prop}`) && allowed.length && !allowed.includes(value.typeName) && defs[value.typeName]) {
+          issues.push({ component: value.typeName, slot: `${parent}.${prop}`, where, allowed });
+          return; // what is inside a misplaced component is not drawn either
+        }
+        check(value, where);
+      } else if (Array.isArray(value)) {
+        const item = itemsOf(slot);
+        value.forEach((v, i) => visit(v, item ?? slot, parent, prop, `${where}[${i}]`));
+      }
+    };
+
+    const check = (node: any, where: string) => {
+      if (seen.has(node)) return;
+      seen.add(node);
+      const props = defs[node.typeName]?.properties;
+      if (!props) return;
+      for (const [prop, value] of Object.entries<any>(node.props ?? {})) {
+        if (value && typeof value === "object" && props[prop]) {
+          const at = `${node.typeName}.${prop}`;
+          visit(value, props[prop], node.typeName, prop, where === "" ? at : `${where} > ${at}`);
+        }
+      }
+    };
+
+    if (isElement(root)) check(root, "");
+    return issues;
+  };
+}

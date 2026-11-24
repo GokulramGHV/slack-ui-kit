@@ -45,7 +45,7 @@ export function controlsFromBlocks(blocks: readonly Block[]): Controls {
   return controls;
 }
 
-const CHOICE_TYPES = new Set(["radio_buttons", "checkboxes", "static_select", "multi_static_select", "overflow"]);
+const CHOICE_TYPES = new Set(["radio_buttons", "checkboxes", "static_select", "multi_static_select", "overflow", "external_select", "multi_external_select"]);
 
 /**
  * Shown option text of each $state variable bound to a choice input. Keys carry the `$`, like
@@ -61,9 +61,16 @@ export function stateLabelsFromRender(
     if (!entry || entry.kind !== "input" || !CHOICE_TYPES.has(el.type)) return;
     const key = entry.target.startsWith("$") ? entry.target : `$${entry.target}`;
     const current = state[key] ?? state[entry.target];
-    const options: any[] = [...(el.options ?? []), ...(el.option_groups ?? []).flatMap((g: any) => g.options ?? [])];
+    // A search dropdown lists no options; its picks are its initial options, and its state holds { value, label } items.
+    const options: any[] = [
+      ...(el.options ?? []),
+      ...(el.option_groups ?? []).flatMap((g: any) => g.options ?? []),
+      ...(el.initial_options ?? []),
+      ...(el.initial_option ? [el.initial_option] : []),
+    ];
     const textOf = (v: unknown): string | undefined => {
-      const t = options.find((o) => o?.value === v)?.text?.text;
+      const value = v && typeof v === "object" ? (v as { value?: unknown }).value : v;
+      const t = options.find((o) => o?.value === value)?.text?.text;
       return typeof t === "string" ? t : undefined;
     };
     if (Array.isArray(current)) {
