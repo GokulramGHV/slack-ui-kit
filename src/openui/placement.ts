@@ -61,6 +61,16 @@ function itemsOf(s: any): any {
  */
 const DROPS: ReadonlySet<string> = new Set(["Actions.items", "Form.fields", "Section.accessory"]);
 
+/**
+ * Components that draw nothing themselves: a parent reads them as data (Option, Source, Tag, Alert,
+ * form fields) or draws them in its own way (NumberInput and SearchSelect, inside Actions). Under a
+ * parent that does not list them, they vanish, whichever parent it is.
+ */
+const NO_OUTPUT: ReadonlySet<string> = new Set([
+  "NumberInput", "SearchSelect", "TextInput", "TextArea", "EmailInput", "URLInput",
+  "Option", "Source", "Tag", "Alert", "Field", "Para", "Quote", "Code", "List",
+]);
+
 export function placementChecker(library: SlackLibrary) {
   const schema: any = library.toJSONSchema();
   const defs: Record<string, any> = schema.$defs ?? {};
@@ -79,7 +89,7 @@ export function placementChecker(library: SlackLibrary) {
     const visit = (value: any, slot: any, parent: string, prop: string, where: string) => {
       if (isElement(value)) {
         const allowed = refsOf(slot);
-        if (DROPS.has(`${parent}.${prop}`) && allowed.length && !allowed.includes(value.typeName) && defs[value.typeName]) {
+        if ((DROPS.has(`${parent}.${prop}`) || NO_OUTPUT.has(value.typeName)) && allowed.length && !allowed.includes(value.typeName) && defs[value.typeName]) {
           issues.push({ component: value.typeName, slot: `${parent}.${prop}`, where, allowed });
           return; // what is inside a misplaced component is not drawn either
         }

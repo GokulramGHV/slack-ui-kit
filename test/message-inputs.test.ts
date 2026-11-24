@@ -267,6 +267,18 @@ describe("handleOptions", () => {
     expect((await kit.handleOptions(suggestion(ts, "U2", "ppl", "a"))).options).toHaveLength(1);
   });
 
+  it("skips options whose value is over 150 characters", async () => {
+    const { kit, client } = setup({
+      loadOptions: async () => [
+        { value: "v".repeat(151), label: "too long" },
+        { value: "v".repeat(150), label: "ok" },
+      ],
+    });
+    const ts = await post(kit, client);
+    const out = await kit.handleOptions(suggestion(ts, "U1", "ppl", "a"));
+    expect(out.options.map((o) => o.text.text)).toEqual(["ok"]);
+  });
+
   it("gives no options when loadOptions is missing or throws, without throwing", async () => {
     const a = setup();
     const tsA = await post(a.kit, a.client);
@@ -303,15 +315,15 @@ describe("handleOptions", () => {
   });
 });
 
-describe("a component where the parent would drop it", () => {
-  const FORM_IN_ACTIONS = `$t = ""\nroot = Root([Actions([Form("Edit", "Save", [TextInput("T", $t)]), Button("Go")])])`;
+describe("a component where the parent would drop it (SearchSelect in Root)", () => {
+  const FORM_IN_ACTIONS = `$o = null\nroot = Root([Section("Pick"), SearchSelect("Owner", $o, "people")])`;
 
   it("render throws a CardRenderError naming the component and where it is", async () => {
     const { kit } = setup();
     const err: any = await kit.render(FORM_IN_ACTIONS).catch((e) => e);
     expect(err).toBeInstanceOf(CardRenderError);
-    expect(err.message).toContain("Form is not allowed in Actions.items");
-    expect(err.message).toContain("Root.children[0] > Actions.items[0]");
+    expect(err.message).toContain("SearchSelect is not allowed in Root.children");
+    expect(err.message).toContain("Root.children[1]");
     expect(err.source).toBe(FORM_IN_ACTIONS);
   });
 
@@ -325,10 +337,18 @@ describe("a component where the parent would drop it", () => {
     const { kit, client } = setup();
     const err: any = await kit.postCard(client, target, FORM_IN_ACTIONS, { owner: "U1" }).catch((e) => e);
     expect(err).toBeInstanceOf(CardRenderError);
-    expect(err.message).toContain("Form is not allowed in Actions.items");
+    expect(err.message).toContain("SearchSelect is not allowed in Root.children");
     expect(err.ts).toMatch(/^1700000000/);
     const update = client.calls.find((c) => c.method === "chat.update")!.args;
     expect(update.text).toBe("Couldn't show this card.");
+  });
+
+  it("catches NumberInput in a Container, and SearchSelect or NumberInput in a Section accessory", async () => {
+    const { kit } = setup();
+    const a: any = await kit.render(`$n = 1\nroot = Root([Container("c", [NumberInput("N", $n)])])`).catch((e) => e);
+    expect(a).toBeInstanceOf(CardRenderError);
+    expect(a.message).toContain("NumberInput is not allowed in Container.children");
+    await expect(kit.render(`$n = 1\nroot = Root([Section("x", NumberInput("N", $n))])`)).rejects.toBeInstanceOf(CardRenderError);
   });
 
   it("also catches a field a Form would drop", async () => {

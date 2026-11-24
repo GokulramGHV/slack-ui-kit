@@ -39,7 +39,7 @@ export { controlsFromBlocks, controlsFromRender, type Controls } from "./control
 export { lockedBlocks, dateToken } from "./lock.js";
 export { createCardEngine, type CardEngine } from "./openui/index.js";
 export type { FormSpec } from "./types.js";
-export { blocks, LIMITS, richText, type Source, type TaskInput, type TaskStatus } from "./blocks.js";
+export { blocks, clipTo, LIMITS, type ContainerWidth, richText, type Source, type TaskInput, type TaskStatus } from "./blocks.js";
 export * as components from "./components.js";
 export { formModal } from "./modal.js";
 export { notificationText } from "./fallback.js";

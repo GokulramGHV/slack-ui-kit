@@ -10,6 +10,7 @@
 import { createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
 import type { SlackTools } from "@openuidev/channels/slack";
 import type { GroupResolver } from "./access.js";
+import { clipTo } from "./blocks.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
 import { controlsFromBlocks, controlsFromRender, stateLabelsFromRender } from "./controls.js";
 import { clickFromAction, clickFromSubmission, decide, elementValue, type Click, type Decision } from "./decide.js";
@@ -211,6 +212,7 @@ export type SlackKit = {
 
 /** A block that holds a checkbox, select, picker or other input Slack keeps state for on screen. */
 function holdsInput(b: Block): boolean {
+  if ((b as any).type === "container") return ((b as any).child_blocks ?? []).some(holdsInput);
   const isInput = (e: any) => !!e && typeof e.type === "string" && e.type !== "button" && e.type !== "image" && e.type !== "feedback_buttons";
   const blk = b as any;
   if (blk.type === "input") return true;
@@ -266,7 +268,13 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
   let redraws = 0;
   const redraw = (client: SlackClient, card: CardRecord) => {
     const fresh = `r${now().getTime().toString(36)}${(++redraws).toString(36)}`;
-    const blocks = card.blocks.map((b, i) => (holdsInput(b) ? { ...b, block_id: `${fresh}_${i}` } : b));
+    const refresh = (b: Block, tag: string): Block =>
+      (b as any).type === "container"
+        ? { ...b, child_blocks: ((b as any).child_blocks ?? []).map((c: Block, j: number) => refresh(c, `${tag}_${j}`)) }
+        : holdsInput(b)
+          ? { ...b, block_id: `${fresh}_${tag}` }
+          : b;
+    const blocks = card.blocks.map((b, i) => refresh(b, String(i)));
     return write(client, card, blocks).catch(() => {});
   };
 
@@ -757,8 +765,9 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       const options = (Array.isArray(found) ? found : []).flatMap((o) => {
         const value = o?.value == null ? "" : String(o.value);
         const label = o?.label == null || o.label === "" ? value : String(o.label);
-        if (!value || !label) return [];
-        return [{ text: { type: "plain_text" as const, text: label.length > 75 ? `${label.slice(0, 74)}…` : label }, value }];
+        // Slack refuses the whole response if one value is over 150 characters.
+        if (!value || !label || value.length > 150) return [];
+        return [{ text: { type: "plain_text" as const, text: clipTo(label, 75) }, value }];
       });
       return { options: options.slice(0, 100) };
     } catch {

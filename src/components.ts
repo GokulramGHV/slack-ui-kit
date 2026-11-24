@@ -6,7 +6,7 @@ import { defineBlockComponent } from "@openuidev/channels";
 import { library as stock } from "@openuidev/channels/slack";
 import { markReactive } from "@openuidev/lang-core";
 import { z } from "zod";
-import { blocks, type Align, type Cell, type TaskInput } from "./blocks.js";
+import { blocks, clipTo, type Align, type Cell, type ContainerWidth, type TaskInput } from "./blocks.js";
 import type { ComponentChanges } from "./openui/library.js";
 import type { Block } from "./sanitize.js";
 
@@ -166,25 +166,6 @@ export const Tags = defineBlockComponent({
   render: ({ props }) => {
     const list = (props.tags ?? []).map((n: any) => ({ text: text(n?.props?.text), color: optional(n?.props?.color) as any })).filter((t: any) => t.text.trim());
     return list.length ? [blocks.tags(list)] : [];
-  },
-});
-
-const childRefs = [S.Header.ref, S.Section.ref, S.Fields.ref, S.Context.ref, S.Divider.ref, S.Image.ref, S.Markdown.ref, S.RichText.ref, Table.ref, Tags.ref] as const;
-
-export const Container = defineBlockComponent({
-  name: "Container",
-  description:
-    "A titled group of up to 10 display blocks (no buttons or inputs), optionally collapsible and collapsed at first. Use for details people may want to hide: Container(\"Details\", [Section(...), Table(...)], true, true).",
-  props: z.object({
-    title: z.string(),
-    children: z.array(z.union(childRefs)),
-    collapsible: z.boolean().nullable().optional(),
-    collapsed: z.boolean().nullable().optional(),
-  }),
-  render: ({ props, ctx }) => {
-    const children = walk(ctx, props.children ?? []);
-    if (!children.length) return [];
-    return [blocks.container(text(props.title), children, { collapsible: !!props.collapsible, collapsed: !!props.collapsed })];
   },
 });
 
@@ -350,7 +331,7 @@ export const SearchSelect = defineBlockComponent({
 });
 
 /** Slack takes at most 75 characters in an option's text. */
-const clipOption = (t: string) => (t.length > 75 ? `${t.slice(0, 74)}…` : t);
+const clipOption = (t: string) => clipTo(t, 75);
 
 const plainText = (t: string) => ({ type: "plain_text", text: t });
 
@@ -403,23 +384,49 @@ const stockActionItems: unknown[] = stockActions.props.shape.items.element.optio
  */
 export const Actions = defineBlockComponent({
   name: "Actions",
-  description: `${stockActions.description} Also NumberInput(label, $var) for a whole number and SearchSelect(name, $var, source, multi?) for a long list searched as the user types. Form does not go inside Actions: put it in Root.`,
-  props: z.object({ items: z.array(z.union([...stockActionItems, NumberInput.ref, SearchSelect.ref] as any)) }),
+  description: `${stockActions.description} Also NumberInput(label, $var) for a whole number and SearchSelect(name, $var, source, multi?) for a long list searched as the user types. A Form may sit in the row: its button opens the form.`,
+  props: z.object({ items: z.array(z.union([...stockActionItems, NumberInput.ref, SearchSelect.ref, Form.ref] as any)) }),
   render: ({ props, node, ctx }) => {
     const items = ((props as any).items ?? []).slice(0, 25);
-    const mine = items.filter((n: any) => isElement(n) && (n.typeName === "NumberInput" || n.typeName === "SearchSelect"));
-    const rest = items.filter((n: any) => !mine.includes(n));
-    // Ids come from a counter, so they depend only on the source, not on the state.
+    // One row in the order written; a Form puts its open-form button in the row. Inputs go after the row.
     const row: Block[] = [];
     const inputs: Block[] = [];
     for (const n of items) {
-      if (mine.includes(n)) {
+      if (isElement(n) && (n.typeName === "NumberInput" || n.typeName === "SearchSelect")) {
         const b = messageInput(n, ctx);
         if (b) inputs.push(b);
+      } else if (isElement(n) && n.typeName === "Form") {
+        for (const b of (Form as any).component({ props: n.props ?? {}, node: n, ctx }) as Block[]) {
+          if (b.type === "actions") row.push(...(b.elements ?? []));
+        }
+      } else {
+        for (const b of stockActions.component({ props: { ...props, items: [n] }, node, ctx }) as Block[]) {
+          if (b.type === "actions") row.push(...(b.elements ?? []));
+          else inputs.push(b);
+        }
       }
     }
-    if (rest.length) row.push(...(stockActions.component({ props: { ...props, items: rest }, node, ctx }) as Block[]));
-    return [...row, ...inputs];
+    return [...(row.length ? [{ type: "actions", elements: row }] : []), ...inputs];
+  },
+});
+
+const childRefs = [S.Header.ref, S.Section.ref, S.Fields.ref, S.Context.ref, S.Divider.ref, S.Image.ref, S.Markdown.ref, S.RichText.ref, Table.ref, Tags.ref, Actions.ref] as const;
+
+export const Container = defineBlockComponent({
+  name: "Container",
+  description:
+    "A titled group of up to 10 blocks (text, tables, tags and an Actions row of buttons and inputs), optionally collapsible and collapsed at first, with an optional width: \"narrow\", \"standard\", \"wide\" or \"full\". Use for a draft with its own buttons, or for details people may want to hide: Container(\"Details\", [Section(...), Table(...)], true, true, \"full\").",
+  props: z.object({
+    title: z.string(),
+    children: z.array(z.union(childRefs)),
+    collapsible: z.boolean().nullable().optional(),
+    collapsed: z.boolean().nullable().optional(),
+    width: z.string().nullable().optional(),
+  }),
+  render: ({ props, ctx }) => {
+    const children = walk(ctx, props.children ?? []);
+    if (!children.length) return [];
+    return [blocks.container(text(props.title), children, { collapsible: !!props.collapsible, collapsed: !!props.collapsed, width: optional(props.width) as ContainerWidth | undefined })];
   },
 });
 

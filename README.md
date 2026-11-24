@@ -277,19 +277,41 @@ modest card over. Keep a card well under that:
 
 - Use `SearchSelect` for long option lists instead of `MultiSelect`.
 - Put long text in a thread reply, not in the card.
-- A `Card` clips its text; other blocks do not.
+- Only a `Card` is clipped by the kit. Text in other blocks is cut only at Slack's per-field maximums, so a card can still be too large.
 
-## A component the parent would drop
+## Controls inside a Container
 
-Some parents draw only the components they accept and skip the rest. A `Form`
-inside `Actions` used to vanish without a word: OpenUI drew the card without it.
-Now `postCard` and `render` throw a `CardRenderError` that names the component
-and where it is, for example `Form is not allowed in Actions.items (at
-Root.children[0] > Actions.items[0]); Actions.items accepts only Button, ...`,
-and nothing is posted (with a placeholder, it is replaced by the short failure
-note). Put `Form` in `Root`. Only these slots are checked: `Actions.items`,
-`Form.fields` and `Section.accessory`. Other OpenUI warnings (an unknown
-component, extra arguments, a bare input in `Root`) are still just warnings.
+A `Container` may hold an `Actions` row (buttons, a `Form` button, `NumberInput`,
+`SearchSelect`), so a draft can carry its own buttons:
+
+```
+box = Container("Draft", [Section("..."), Tags([...]), Context("..."), row], false, false, "full")
+row = Actions([Form("Edit details", "Save", [...]), Button("Cancel", ...), Button("Create", ..., "primary")])
+```
+
+Access, lock and `required` work as at top level: a click inside the container
+is found like any other, a lock replaces the controls inside it with what was
+chosen, and a refused change redraws the inputs in it.
+
+## A component that would vanish
+
+Some components draw nothing on their own, or sit where the parent skips them.
+Rather than post a card with the control silently missing, `postCard` and
+`render` throw a `CardRenderError` that names the component and where it is, for
+example `SearchSelect is not allowed in Root.children (at Root.children[1]);
+Root.children accepts only Header, Section, ...`. Nothing is posted (with a
+placeholder, it is replaced by the short failure note). The cases:
+
+- `NumberInput`, `SearchSelect`, `TextInput` and the other parts that render
+  nothing alone (`Option`, `Source`, `Tag`, `Alert`, ...) under a parent that does not list them.
+  `NumberInput` and `SearchSelect` belong in `Actions` (`NumberInput` also in `Form`).
+- Anything in `Actions.items`, `Form.fields` or `Section.accessory` that the slot
+  does not list, such as a `Radio` in a `Form`. (A `Form` is listed in `Actions.items`.)
+
+Other OpenUI warnings (an unknown component, extra arguments, a bare input in
+`Root`) are still just warnings. An item chosen by a condition
+(`$x ? Form(...) : Button(...)`) is not checked, and `Plan.tasks` is not checked.
+Note that `kit.engine.renderState` is strict too.
 
 ## Store
 
@@ -312,11 +334,12 @@ returning whether a row changed. `MemoryCardStore` is for tests and simple bots.
 | TaskCard | `TaskCard(title, status, details?, output?, [Source(label, url)]?)` | pending, in_progress, complete, error; alone and pending, it posts as a one-task Plan |
 | Table | `Table(headers, rows, align?)` | number cells, `["left", "right"]` |
 | DataTable | `DataTable(caption, headers, rows, pageSize?)` | cells: text, number, Button; messages only |
-| Card | `Card(title, body?, [Button...]?, subtitle?, subtext?, icon?)` | up to 3 buttons; `icon` is an image URL; title and subtitle clip at 150 characters, body and subtext at 200 |
+| Card | `Card(title, body?, [Button...]?, subtitle?, subtext?, icon?)` | up to 3 buttons; `icon` is an http(s) image URL (anything else is left out); title and subtitle clip at 150 characters, body and subtext at 200, and a clip never splits a `<@U…>` mention, a `<link|label>` or a `:emoji:` |
+| Actions | `Actions([Button, Form, NumberInput, SearchSelect, ...])` | one row in the order written. A `Form` in the row puts its open-form button there, so a row can be `[Edit details, Cancel, Create]`; the form still opens its modal on click. `NumberInput` and `SearchSelect` get their own input block after the row |
 | NumberInput | `NumberInput(label, $var)` in `Form` or in `Actions([...])` | in `Actions` it is its own input block that saves when the user presses Enter; whole numbers; state holds a number, or null when cleared |
 | SearchSelect | `SearchSelect(name, $var, source, multi?)` in `Actions([...])` | options load as the user types, see below |
 | Carousel | `Carousel([Card...])` | 1 to 10 cards |
-| Container | `Container(title, [blocks], collapsible?, collapsed?)` | up to 10 display blocks |
+| Container | `Container(title, [blocks], collapsible?, collapsed?, width?)` | up to 10 blocks: Header, Section, Fields, Context, Divider, Image, Markdown, RichText, Table, Tags and an `Actions` row; `width` is `"narrow"`, `"standard"`, `"wide"` or `"full"` (left out when unset) |
 | Layout | `Layout(label, [[Section...]], gridLines?)` | 5 rows of 3 |
 | Feedback | `Feedback(positive?, negative?)` | anyone, never locks |
 | Tags | `Tags([Tag(text, color)])` | 9 colors |

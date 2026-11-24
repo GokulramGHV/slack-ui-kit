@@ -137,8 +137,24 @@ function dataTable(caption: string, headers: readonly string[], rows: readonly (
 const mrkdwn = (text: string) => ({ type: "mrkdwn", text });
 const plainText = (text: string) => ({ type: "plain_text", text });
 
-/** Clip text to `max` characters, ending in an ellipsis when it was cut. */
-const clipTo = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+/**
+ * Clip text to `max` characters, ending in an ellipsis when it was cut. The cut steps back so it never
+ * splits an emoji (surrogate pair), a `<...>` token (mention, link, date) or a `:emoji:` shortcode.
+ */
+export function clipTo(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let cut = max - 1;
+  const high = (i: number) => text.charCodeAt(i) >= 0xd800 && text.charCodeAt(i) <= 0xdbff;
+  if (cut > 0 && high(cut - 1)) cut--;
+  const head = text.slice(0, cut);
+  const open = head.lastIndexOf("<");
+  if (open > head.lastIndexOf(">") && /^<[^\s<>]/.test(text.slice(open)) && text.indexOf(">", cut) !== -1) cut = open;
+  const colon = text.slice(0, cut).lastIndexOf(":");
+  if (colon !== -1 && /^:[\w+-]*$/.test(text.slice(colon, cut)) && /^[\w+-]*:/.test(text.slice(cut))) cut = colon;
+  return `${text.slice(0, cut)}…`;
+}
+
+const isHttpUrl = (s: unknown): s is string => typeof s === "string" && /^https?:\/\/\S+$/i.test(s.trim());
 
 export type CardInput = {
   title: string;
@@ -166,7 +182,7 @@ function card(c: CardInput): Block {
     ...(filled(c.subtitle) ? { subtitle: mrkdwn(clipTo(c.subtitle, LIMITS.cardSubtitle)) } : {}),
     ...(filled(c.body) ? { body: mrkdwn(clipTo(c.body, LIMITS.cardBody)) } : {}),
     ...(filled(c.subtext) ? { subtext: mrkdwn(clipTo(c.subtext, LIMITS.cardSubtext)) } : {}),
-    ...(filled(c.icon) ? { icon: { type: "image", image_url: c.icon, alt_text: title.trim() ? title : "icon" } } : {}),
+    ...(isHttpUrl(c.icon) ? { icon: { type: "image", image_url: c.icon.trim(), alt_text: title.trim() ? title : "icon" } } : {}),
     ...(actions.length ? { actions } : {}),
   };
 }
@@ -176,11 +192,19 @@ function carousel(cards: readonly Block[]): Block {
   return { type: "carousel", elements: cards.slice(0, LIMITS.carouselCards) };
 }
 
-/** A titled group of up to 10 blocks that can be collapsed. */
-function container(title: string, children: readonly Block[], opts: { collapsible?: boolean; collapsed?: boolean } = {}): Block {
+export type ContainerWidth = "narrow" | "standard" | "wide" | "full";
+const CONTAINER_WIDTHS: ReadonlySet<string> = new Set(["narrow", "standard", "wide", "full"]);
+
+/** A titled group of up to 10 blocks that can be collapsed. Slack allows display, actions and input blocks inside. */
+function container(
+  title: string,
+  children: readonly Block[],
+  opts: { collapsible?: boolean; collapsed?: boolean; width?: ContainerWidth } = {},
+): Block {
   return {
     type: "container",
     title: plainText(String(title ?? "")),
+    ...(opts.width && CONTAINER_WIDTHS.has(opts.width) ? { width: opts.width } : {}),
     ...(opts.collapsible ? { is_collapsible: true } : {}),
     ...(opts.collapsible && opts.collapsed ? { default_collapsed: true } : {}),
     child_blocks: children.slice(0, LIMITS.containerChildren),
