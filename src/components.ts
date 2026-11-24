@@ -204,10 +204,13 @@ export const Alert = defineBlockComponent({
 /** A notice inside a form: shown before the field at index `before` (or at the end). */
 export type FormNotice = { before: number; text: string; level?: string };
 
-/** Replaces OpenUI's Form: the same, plus Alert among the fields. Alerts are saved on the form spec as `notices`. */
+/**
+ * Replaces OpenUI's Form: the same, plus Alert among the fields and a list of optional fields.
+ * Alerts are saved on the form spec as `notices`, optional field names (without `$`) as `optional`.
+ */
 export const Form = defineBlockComponent({
   name: "Form",
-  description: `${S.Form.description} Fields may include an Alert for a warning or note.`,
+  description: `${S.Form.description} Fields may include an Alert for a warning or note. Every field must be filled to submit, except those named in the fifth argument, a list of $variable names without the $: Form("Edit", "Save", [TextInput("Title", $title), NumberInput("Points", $points)], null, ["points"]). A Select or MultiSelect with no options is left out of the form.`,
   props: z.object({
     title: z.string(),
     submit: z.string(),
@@ -227,6 +230,7 @@ export const Form = defineBlockComponent({
       ]),
     ),
     action: z.any().optional(),
+    optional: z.array(z.string()).nullable().optional(),
   }),
   render: ({ props, node, ctx }) => {
     const notices: FormNotice[] = [];
@@ -237,8 +241,11 @@ export const Form = defineBlockComponent({
         if (t.trim()) notices.push({ before: inputs.length, text: t, ...(optional((f as any).props?.level) ? { level: text((f as any).props.level) } : {}) });
       } else inputs.push(f);
     }
-    const inner = notices.length ? { ...ctx, registerForm: (id: string, spec: any) => ctx.registerForm(id, { ...spec, notices }) } : ctx;
-    return (S.Form as any).component({ props: { ...props, fields: inputs }, node, ctx: inner });
+    const optionalNames = (props.optional ?? []).map((n: unknown) => text(n).replace(/^\$/, "")).filter(Boolean);
+    const extra = { ...(notices.length ? { notices } : {}), ...(optionalNames.length ? { optional: optionalNames } : {}) };
+    const inner = Object.keys(extra).length ? { ...ctx, registerForm: (id: string, spec: any) => ctx.registerForm(id, { ...spec, ...extra }) } : ctx;
+    const { optional: _optional, ...stock } = props;
+    return (S.Form as any).component({ props: { ...stock, fields: inputs }, node, ctx: inner });
   },
 });
 

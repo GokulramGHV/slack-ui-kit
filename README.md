@@ -343,6 +343,7 @@ returning whether a row changed. `MemoryCardStore` is for tests and simple bots.
 | Layout | `Layout(label, [[Section...]], gridLines?)` | 5 rows of 3 |
 | Feedback | `Feedback(positive?, negative?)` | anyone, never locks |
 | Tags | `Tags([Tag(text, color)])` | 9 colors |
+| Form | `Form(title, submit, [fields], action?, optional?)` | a button that opens a modal. Every field is required to submit, except those named in `optional`, a list of $variable names without the `$` (`null` for `action` when there is none). A `Select` or `MultiSelect` with no options is left out of the modal, not shown as a text box |
 | Alert | `Alert(text, level?)` inside `Form` fields | modals only |
 
 The same blocks without OpenUI: `blocks.plan(...)`, `blocks.taskCard(...)`,
