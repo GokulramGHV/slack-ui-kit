@@ -334,12 +334,12 @@ returning whether a row changed. `MemoryCardStore` is for tests and simple bots.
 | TaskCard | `TaskCard(title, status, details?, output?, [Source(label, url)]?)` | pending, in_progress, complete, error; alone and pending, it posts as a one-task Plan |
 | Table | `Table(headers, rows, align?)` | number cells, `["left", "right"]` |
 | DataTable | `DataTable(caption, headers, rows, pageSize?)` | cells: text, number, Button; messages only |
-| Card | `Card(title, body?, [Button...]?, subtitle?, subtext?, icon?)` | up to 3 buttons; `icon` is an http(s) image URL (anything else is left out); title and subtitle clip at 150 characters, body and subtext at 200, and a clip never splits a `<@U…>` mention, a `<link|label>` or a `:emoji:` |
+| Card | `Card(title, body?, [Button...]?, subtitle?, subtext?, icon?)` | up to 3 buttons (more fails the render); `icon` is an http(s) image URL (anything else is left out); title and subtitle clip at 150 characters, body and subtext at 200, and a clip never splits a `<@U…>` mention, a `<link|label>` or a `:emoji:` |
 | Actions | `Actions([Button, Form, NumberInput, SearchSelect, ...])` | one row in the order written. A `Form` in the row puts its open-form button there, so a row can be `[Edit details, Cancel, Create]`; the form still opens its modal on click. `NumberInput` and `SearchSelect` get their own input block after the row |
 | NumberInput | `NumberInput(label, $var)` in `Form` or in `Actions([...])` | in `Actions` it is its own input block that saves when the user presses Enter; whole numbers; state holds a number, or null when cleared |
 | SearchSelect | `SearchSelect(name, $var, source, multi?)` in `Actions([...])` | options load as the user types, see below |
 | Carousel | `Carousel([Card...])` | 1 to 10 cards |
-| Container | `Container(title, [blocks], collapsible?, collapsed?, width?)` | up to 10 blocks: Header, Section, Fields, Context, Divider, Image, Markdown, RichText, Table, Tags and an `Actions` row; `width` is `"narrow"`, `"standard"`, `"wide"` or `"full"` (left out when unset) |
+| Container | `Container(title, [blocks], collapsible?, collapsed?, width?)` | up to 10 blocks (more fails the render): Header, Section, Fields, Context, Divider, Image, Markdown, RichText, Table, Tags and an `Actions` row; `width` is `"narrow"`, `"standard"`, `"wide"` or `"full"` (left out when unset) |
 | Layout | `Layout(label, [[Section...]], gridLines?)` | 5 rows of 3 |
 | Feedback | `Feedback(positive?, negative?)` | anyone, never locks |
 | Tags | `Tags([Tag(text, color)])` | 9 colors |

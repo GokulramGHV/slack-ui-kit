@@ -34,7 +34,7 @@ export class CardPlacementError extends Error {
   }
 }
 
-/** A card with a container that holds more children than Slack takes; the tail (often its buttons) would be cut. */
+/** A card with more than Slack takes in one block (container children, card buttons); the tail (often its buttons) would be cut. */
 export class CardLimitError extends Error {
   constructor(message: string) {
     super(message);
@@ -42,13 +42,23 @@ export class CardLimitError extends Error {
   }
 }
 
-/** Throws CardLimitError when a container has more than 10 children. Run on cleaned blocks. */
+/** Throws CardLimitError when a container has more than 10 children or a card more than 3 buttons. Run on cleaned blocks. */
 export function checkLimits(blocks: readonly Block[]): void {
   for (const b of blocks) {
-    const kids = b.type === "container" ? (b.child_blocks ?? []) : [];
-    if (kids.length > LIMITS.containerChildren) {
+    if (b.type === "container") {
+      const kids: Block[] = b.child_blocks ?? [];
+      if (kids.length > LIMITS.containerChildren) {
+        throw new CardLimitError(
+          `Container "${b.title?.text ?? ""}" has ${kids.length} children but Slack allows at most ${LIMITS.containerChildren}; the children past ${LIMITS.containerChildren} (such as an Actions row of buttons) would be dropped. Shorten the list or split it across Containers.`,
+        );
+      }
+      checkLimits(kids);
+    } else if (b.type === "carousel") {
+      checkLimits(b.elements ?? []);
+    } else if (b.type === "card" && (b.actions?.length ?? 0) > LIMITS.cardActions) {
+      const title = String(b.title?.text ?? "");
       throw new CardLimitError(
-        `Container "${b.title?.text ?? ""}" has ${kids.length} children but Slack allows at most ${LIMITS.containerChildren}; the children past ${LIMITS.containerChildren} (such as an Actions row of buttons) would be dropped. Shorten the list or split it across Containers.`,
+        `Card ${title ? `"${title}" ` : ""}has ${b.actions.length} buttons but Slack allows at most ${LIMITS.cardActions}; the buttons past ${LIMITS.cardActions} would be dropped. Remove some buttons or split them across Cards.`,
       );
     }
   }

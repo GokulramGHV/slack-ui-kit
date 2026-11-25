@@ -37,4 +37,18 @@ describe("block limits fail loudly", () => {
     expect(err.message).toContain("Deploy request");
     expect(client.calls.filter((c) => c.method === "chat.postMessage")).toHaveLength(0);
   });
+
+  const cardWith = (n: number) =>
+    `$p = ""\nroot = Root([Card("api", "body", [${Array.from({ length: n }, (_, i) => `Button("B${i}", Action([@Set($p, "${i}")]))`).join(", ")}])])`;
+
+  it("errors when a card has more buttons than Slack allows, naming it", async () => {
+    await expect(kit().render(cardWith(4))).rejects.toThrow(
+      'Card "api" has 4 buttons but Slack allows at most 3; the buttons past 3 would be dropped. Remove some buttons or split them across Cards.',
+    );
+  });
+
+  it("renders every button at exactly the card limit", async () => {
+    const r = await kit().render(cardWith(3));
+    expect((r.blocks[0] as any).actions.map((a: any) => a.text.text)).toEqual(["B0", "B1", "B2"]);
+  });
 });

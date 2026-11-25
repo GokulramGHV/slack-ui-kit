@@ -170,11 +170,11 @@ export type CardInput = {
 
 /**
  * Slack's card block: a title, optional subtitle, body and subtext, an optional
- * icon, and up to 3 buttons. Text past Slack's limits (title and subtitle 150
+ * icon, and up to 3 buttons (more fail the render, see checkLimits). Text past Slack's limits (title and subtitle 150
  * characters, body and subtext 200) is clipped with an ellipsis.
  */
 function card(c: CardInput): Block {
-  const actions = (c.actions ?? []).slice(0, LIMITS.cardActions);
+  const actions = [...(c.actions ?? [])];
   const title = clipTo(String(c.title ?? ""), LIMITS.cardTitle);
   return {
     type: "card",

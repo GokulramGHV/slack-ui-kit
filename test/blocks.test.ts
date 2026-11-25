@@ -106,8 +106,8 @@ describe("blocks.card and blocks.carousel", () => {
     expect(blocks.carousel(cards)).toEqual(accepted.carousel);
   });
 
-  it("keep to Slack's limits: 3 buttons per card, 10 cards per carousel", () => {
-    expect(blocks.card({ title: "x", actions: [1, 2, 3, 4].map((i) => open(`b${i}`)) }).actions).toHaveLength(3);
+  it("keep to Slack's limits: 10 cards per carousel (a card's buttons are checked at render, not cut)", () => {
+    expect(blocks.card({ title: "x", actions: [1, 2, 3, 4].map((i) => open(`b${i}`)) }).actions).toHaveLength(4);
     expect(blocks.carousel(Array.from({ length: 12 }, () => blocks.card({ title: "x" }))).elements).toHaveLength(10);
   });
 

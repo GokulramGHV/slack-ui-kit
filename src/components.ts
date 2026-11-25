@@ -118,7 +118,7 @@ const buttonRefs = [S.Button.ref, S.LinkButton.ref] as const;
 export const Card = defineBlockComponent({
   name: "Card",
   description:
-    'A card with a title, optional body text and up to 3 buttons. Use several in a Carousel. Args in order: title, body?, actions?, subtitle? (a line under the title, 150 characters), subtext? (small text under the body, 200 characters), icon? (an image URL). Title and subtitle are clipped at 150 characters, body and subtext at 200; Slack markdown works in all four. Use null to skip an optional arg you do not need. A Button on a card should @Set a $variable naming that card, so the bot knows which one was pressed: Card("api", "12 commits ahead", [Button("Open", Action([@Set($picked, "api")]))], "main branch", "updated 2h ago", "https://example.com/api.png").',
+    'A card with a title, optional body text and up to 3 buttons (more than 3 fails the render). Use several in a Carousel. Args in order: title, body?, actions?, subtitle? (a line under the title, 150 characters), subtext? (small text under the body, 200 characters), icon? (an image URL). Title and subtitle are clipped at 150 characters, body and subtext at 200; Slack markdown works in all four. Use null to skip an optional arg you do not need. A Button on a card should @Set a $variable naming that card, so the bot knows which one was pressed: Card("api", "12 commits ahead", [Button("Open", Action([@Set($picked, "api")]))], "main branch", "updated 2h ago", "https://example.com/api.png").',
   props: z.object({
     title: z.string(),
     body: z.string().nullable().optional(),
@@ -422,7 +422,7 @@ const childRefs = [S.Header.ref, S.Section.ref, S.Fields.ref, S.Context.ref, S.D
 export const Container = defineBlockComponent({
   name: "Container",
   description:
-    "A titled group of up to 10 blocks (text, tables, tags and an Actions row of buttons and inputs), optionally collapsible and collapsed at first, with an optional width: \"narrow\", \"standard\", \"wide\" or \"full\". Use for a draft with its own buttons, or for details people may want to hide: Container(\"Details\", [Section(...), Table(...)], true, true, \"full\").",
+    "A titled group of up to 10 blocks (more than 10 fails the render; text, tables, tags and an Actions row of buttons and inputs), optionally collapsible and collapsed at first, with an optional width: \"narrow\", \"standard\", \"wide\" or \"full\". Use for a draft with its own buttons, or for details people may want to hide: Container(\"Details\", [Section(...), Table(...)], true, true, \"full\").",
   props: z.object({
     title: z.string(),
     children: z.array(z.union(childRefs)),
