@@ -12,7 +12,7 @@ export {
   type SlackUIOptions,
   type StreamedCard,
 } from "./openui/index.js";
-export { CardRenderError, CardPlacementError, type Misplaced } from "./openui/index.js";
+export { CardRenderError, CardPlacementError, CardLimitError, type Misplaced } from "./openui/index.js";
 export { BLOCK_LIMITS, isEmptyText, sanitize, type Block, type Surface } from "./sanitize.js";
 export { MemoryCardStore } from "./store.js";
 export type { Access, CardEvent, CardRecord, CardStore, ControlKind, LockInfo, Rule } from "./types.js";

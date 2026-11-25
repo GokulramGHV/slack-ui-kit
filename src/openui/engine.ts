@@ -5,7 +5,7 @@ import type { SlackBlock, SlackTools } from "@openuidev/channels/slack";
 import { notificationText, OPENUI_DEFAULT_TEXT } from "../fallback.js";
 import { decodePlainText, sanitize } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
-import { CardPlacementError, placementChecker } from "./placement.js";
+import { CardPlacementError, checkLimits, placementChecker } from "./placement.js";
 
 export type Render = RenderResult<SlackBlock[]>;
 type State = Record<string, unknown>;
@@ -22,7 +22,7 @@ export function createCardEngine(
   opts: {
     tools?: SlackTools;
     quiet?: boolean;
-    /** renderState throws CardPlacementError when a component sits where the library does not accept it. */
+    /** renderState throws CardPlacementError when a component sits where the library does not accept it, and every render throws CardLimitError when a container has more children than Slack takes. */
     strict?: boolean;
   } = {},
 ): CardEngine {
@@ -30,6 +30,7 @@ export function createCardEngine(
   const raw = createEngine({ ...slackChannel, library }, { toolProvider: opts.tools?.provider, quiet: opts.quiet });
   const clean = (r: Render): Render => {
     const output = sanitize(decodePlainText(r.output));
+    if (opts.strict) checkLimits(output);
     // Notification text is mrkdwn: build it from the output before plain_text is decoded, so escapes stay.
     const fallbackText = () => notificationText(sanitize(r.output));
     // OpenUI only reads Header and Section for the text; cards of newer blocks would say "OpenUI message".

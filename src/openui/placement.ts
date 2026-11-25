@@ -5,6 +5,8 @@
  * this check the card posts with the control silently missing.
  */
 import { createParser } from "@openuidev/lang-core";
+import { LIMITS } from "../blocks.js";
+import type { Block } from "../sanitize.js";
 import type { SlackLibrary } from "./library.js";
 
 export type Misplaced = {
@@ -29,6 +31,26 @@ export class CardPlacementError extends Error {
     );
     this.name = "CardPlacementError";
     this.issues = issues;
+  }
+}
+
+/** A card with a container that holds more children than Slack takes; the tail (often its buttons) would be cut. */
+export class CardLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CardLimitError";
+  }
+}
+
+/** Throws CardLimitError when a container has more than 10 children. Run on cleaned blocks. */
+export function checkLimits(blocks: readonly Block[]): void {
+  for (const b of blocks) {
+    const kids = b.type === "container" ? (b.child_blocks ?? []) : [];
+    if (kids.length > LIMITS.containerChildren) {
+      throw new CardLimitError(
+        `Container "${b.title?.text ?? ""}" has ${kids.length} children but Slack allows at most ${LIMITS.containerChildren}; the children past ${LIMITS.containerChildren} (such as an Actions row of buttons) would be dropped. Shorten the list or split it across Containers.`,
+      );
+    }
   }
 }
 

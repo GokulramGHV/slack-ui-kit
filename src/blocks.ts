@@ -195,7 +195,11 @@ function carousel(cards: readonly Block[]): Block {
 export type ContainerWidth = "narrow" | "standard" | "wide" | "full";
 const CONTAINER_WIDTHS: ReadonlySet<string> = new Set(["narrow", "standard", "wide", "full"]);
 
-/** A titled group of up to 10 blocks that can be collapsed. Slack allows display, actions and input blocks inside. */
+/**
+ * A titled group of up to 10 blocks that can be collapsed. Slack allows display, actions and input blocks inside.
+ * Children are not cut here: the card engine fails a render that has more than LIMITS.containerChildren
+ * (see checkLimits), because dropping the tail would drop its buttons without a word.
+ */
 function container(
   title: string,
   children: readonly Block[],
@@ -207,7 +211,7 @@ function container(
     ...(opts.width && CONTAINER_WIDTHS.has(opts.width) ? { width: opts.width } : {}),
     ...(opts.collapsible ? { is_collapsible: true } : {}),
     ...(opts.collapsible && opts.collapsed ? { default_collapsed: true } : {}),
-    child_blocks: children.slice(0, LIMITS.containerChildren),
+    child_blocks: [...children],
   };
 }
 

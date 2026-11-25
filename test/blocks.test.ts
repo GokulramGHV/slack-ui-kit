@@ -124,8 +124,8 @@ describe("blocks.container and blocks.layout", () => {
     expect(blocks.layout("Summary", [[section("*Stage*\nCompare"), section("*Repos*\n5")]], { gridLines: true })).toEqual(accepted.layout);
   });
 
-  it("keep to Slack's limits: 10 children, 5 rows of 3 items", () => {
-    expect(blocks.container("x", Array.from({ length: 12 }, () => section("a"))).child_blocks).toHaveLength(10);
+  it("keep to Slack's limits: 5 rows of 3 items (a container's children are checked at render, not cut)", () => {
+    expect(blocks.container("x", Array.from({ length: 12 }, () => section("a"))).child_blocks).toHaveLength(12);
     const l = blocks.layout("x", Array.from({ length: 7 }, () => Array.from({ length: 4 }, () => section("a"))));
     expect(l.rows).toHaveLength(5);
     expect(l.rows[0].items).toHaveLength(3);

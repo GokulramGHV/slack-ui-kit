@@ -17,7 +17,7 @@ import { clickFromAction, clickFromSubmission, decide, elementValue, type Click,
 import { slackGroupResolver } from "./groups.js";
 import { lockedBlocks } from "./lock.js";
 import { createCardEngine, type CardEngine, type Render } from "./openui/engine.js";
-import { CardPlacementError } from "./openui/placement.js";
+import { CardLimitError, CardPlacementError } from "./openui/placement.js";
 import { extendLibrary, type ComponentChanges, type SlackLibrary } from "./openui/library.js";
 import { withKitComponents } from "./components.js";
 import { formModal } from "./modal.js";
@@ -327,9 +327,9 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
 
   // ---------- Posting ----------
 
-  /** A component in a place the library does not accept becomes a CardRenderError that names it; for anything else this is undefined. */
+  /** A component in a place the library does not accept, or a card over Slack's block limits, becomes a CardRenderError that names it; for anything else this is undefined. */
   const placed = (e: unknown, source: string, ts: string): CardRenderError | undefined =>
-    e instanceof CardPlacementError ? new CardRenderError(e.message, { source, ts, cause: e }) : undefined;
+    e instanceof CardPlacementError || e instanceof CardLimitError ? new CardRenderError(e.message, { source, ts, cause: e }) : undefined;
 
   /** $state keys carry a dollar sign. Accept names with or without it. */
   const withDollar = (state?: Record<string, unknown>) =>
