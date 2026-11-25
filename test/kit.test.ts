@@ -262,6 +262,35 @@ go = Button("Go", Action([@Set($d, "go"), @Run(save)]))`;
     expect(client.calls.some((c) => c.method === "chat.postEphemeral" && c.args.text === "This was already submitted.")).toBe(true);
   });
 
+  it("makes an update wait for a slow click, so the update is the last thing in the store and on the message", async () => {
+    const src = `root = Root([Section($note), acts])
+$d = ""
+$note = "one"
+save = Mutation("save_item", {name: $d})
+acts = Actions([go])
+go = Button("Go", Action([@Set($d, "go"), @Run(save)]))`;
+    const { kit, client } = setup({
+      tools: {
+        specs: [{ name: "save_item", description: "Save.", inputSchema: { type: "object" } }],
+        provider: { callTool: async () => (await new Promise((r) => setTimeout(r, 300)), { ok: true }) },
+      },
+    });
+    const { ts } = await kit.postCard(client, target, src, { owner: "U1", placeholder: false });
+    const clicked = kit.handleAction(client, press(ts, "U1"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await kit.getCard("C1", ts))!.finishing).toBe(true);
+    const updated = await kit.updateCard(client, "C1", ts, { data: { note: "two" }, replaceKeys: ["note"] });
+    await clicked;
+    expect(updated).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.state.$note).toBe("two");
+    expect(card.state.$d).toBe("go");
+    expect(card.locked).toBeTruthy();
+    expect(card.finishing).toBeUndefined();
+    const writes = client.calls.filter((c) => c.method === "chat.update");
+    expect(JSON.stringify(writes.at(-1)!.args.blocks)).toContain("two");
+  });
+
   it("keeps the card locked with a note, and tells the bot, when the work after the lock crashes", async () => {
     const { kit, client, events } = setup();
     const { ts } = await kit.postCard(client, target, SAMPLE_CARD, { owner: "U1", placeholder: false });
@@ -274,6 +303,16 @@ go = Button("Go", Action([@Set($d, "go"), @Run(save)]))`;
     expect(JSON.stringify(card.blocks)).toContain("Something went wrong after this was pressed.");
     expect(events).toHaveLength(1);
     expect(events[0]!.error).toBe("engine crashed");
+    expect(card.finishing).toBeUndefined();
+    expect(card.locked?.afterNote).toContain("Something went wrong");
+
+    // A later updateCard keeps the note and the "pressed by" footer.
+    kit.engine.applyInteraction = undefined as any;
+    delete (kit.engine as any).applyInteraction;
+    expect(await kit.updateCard(client, "C1", ts, { data: {}, replaceKeys: [] })).toBe(true);
+    const text = JSON.stringify((await kit.getCard("C1", ts))!.blocks);
+    expect(text).toContain("pressed by");
+    expect(text).toContain("Something went wrong after this was pressed.");
   });
 });
 

@@ -28,6 +28,7 @@ export {
   type PostTarget,
   type SlackClient,
   type SlackKit,
+  type UpdateCardOptions,
   type SlackKitOptions,
   type SubmissionResult,
 } from "./kit.js";

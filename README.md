@@ -165,6 +165,25 @@ any locked card. `card.locked.note` holds the note. If Slack refuses the message
 update after the card was locked in the store, `closeCard` throws; the card stays
 locked and the next click on it redraws it.
 
+### Updating a card
+
+`kit.updateCard(client, channel, ts, { data, replaceKeys, source?, access? })`
+redraws a posted card in place (`chat.update` on the same message): the card's
+saved source rendered again with the saved state minus `replaceKeys` plus `data`
+(names with or without the dollar sign). The merge is done from the card as read
+on each attempt, saved with a version check, so a change made meanwhile (a pick, a
+lock) is not undone. Variables not in `replaceKeys` or `data` are kept. Pass
+`source` to draw with new OpenUI Lang (for example a template edited since the
+card posted); it is saved on the card. Pass `access` to replace the click rules
+the same way. Owner and meta stay. A locked card stays locked with the same
+locked look and footer, including the note of a closed card and the note of a
+click whose work failed, and its controls stay refused. If a click is still
+saving its lock, `updateCard` waits up to about a second for it. It resolves
+`true` when it redrew the card, `false` when the card is missing, is not an
+OpenUI card, has no source, or stayed busy. It throws a `CardRenderError` if the new
+state can't be rendered, and throws if Slack refuses the message update after the
+card was saved.
+
 ### Entities
 
 Slack shows `plain_text` literally. If you escape data as `&amp;` `&lt;` `&gt;`

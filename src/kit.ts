@@ -162,6 +162,23 @@ export class EventDeliveryError extends Error {
 const NOT_HANDLED = { handled: false } as const;
 const MAX_ATTEMPTS = 3;
 
+/** What `updateCard` changes. */
+export type UpdateCardOptions = {
+  /** New values for $state variables (names with or without the dollar sign). */
+  data: Record<string, unknown>;
+  /** Variables dropped from the saved state before `data` is applied; every other saved variable is kept. */
+  replaceKeys: string[];
+  /** OpenUI Lang to draw with instead of the saved source; saved on the card. */
+  source?: string;
+  /** Replaces the card's click rules (for a template that was edited). The owner is kept. */
+  access?: Access;
+};
+
+/** How long updateCard waits for a click that is still finishing its lock: TRIES x DELAY ms. */
+const FINISH_WAIT_TRIES = 10;
+const FINISH_WAIT_DELAY = 100;
+const FINISH_STALE_MS = 60_000;
+
 /** What createSlackKit returns. */
 export type SlackKit = {
   /** System prompt for the model, including the added components. */
@@ -200,6 +217,18 @@ export type SlackKit = {
    * on the card redraws it from the store.
    */
   closeCard(client: SlackClient, channel: string, ts: string, opts: { note: string }): Promise<boolean>;
+  /**
+   * Redraw an OpenUI card in place (chat.update on the same message): its saved source (or
+   * `opts.source`, saved on the card) rendered again with the saved state minus `opts.replaceKeys`
+   * plus `opts.data`, merged from the card as read on each attempt and saved with a version check.
+   * Owner and meta stay; `opts.access` replaces the click rules. A locked card stays locked and keeps
+   * its locked look and footer (a closeCard note or a failed-click note included); its controls stay
+   * refused. While a click is still finishing its lock it waits about a second, then gives up.
+   * False when the card is missing, is not an OpenUI card, has no source, or stayed busy. Throws
+   * CardRenderError if the new state can't be rendered, and throws if Slack refuses the update after
+   * the card was saved.
+   */
+  updateCard(client: SlackClient, channel: string, ts: string, opts: UpdateCardOptions): Promise<boolean>;
   handleAction(client: SlackClient, payload: unknown): Promise<ActionResult>;
   handleViewSubmission(client: SlackClient, payload: unknown): Promise<SubmissionResult>;
   /**
@@ -641,7 +670,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
             };
           }
           const lock = lockInfoFor(decision, now);
-          const claim: CardRecord = { ...base, locked: lock, version: card.version + 1 };
+          const claim: CardRecord = { ...base, locked: lock, finishing: true, version: card.version + 1 };
           if (!(await store.put(claim, card.version))) return retry();
           return { decision, done: finishLocked(client, base, claim, decision, lock, result) };
         }
@@ -674,14 +703,23 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     } catch (e: any) {
       // Keep it locked: a tool that threw may still have done its work.
       error = e?.message ?? String(e);
+      const { finishing: _done, ...rest } = claim;
+      const failed = { ...lock, afterNote: messages.failedAfterLock };
       next = {
-        ...claim,
-        blocks: sanitize(lockedBlocks(card.blocks, lock, { note: messages.failedAfterLock })),
+        ...rest,
+        locked: failed,
+        blocks: sanitize(lockedBlocks(card.blocks, failed, { note: messages.failedAfterLock })),
         version: claim.version + 1,
       };
     }
-    await store.put(next, claim.version);
-    return finish(client, next, decision, result, error);
+    // Save with the marker still set, write to Slack, and only then clear it: an updateCard waits for
+    // the marker, so it can neither be undone by this save nor be covered by this click's write. If the
+    // second save fails the marker stays, and updateCard ignores it once it is old.
+    await store.put({ ...next, finishing: true }, claim.version);
+    const cleared: CardRecord = { ...next, version: next.version + 1 };
+    return finish(client, cleared, decision, result, error, async () => {
+      await store.put(cleared, next.version).catch(() => {});
+    });
   }
 
   async function finish(
@@ -690,6 +728,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     decision: Extract<Decision, { type: "apply" }>,
     result: (extra?: any) => ActionResult,
     error?: string,
+    afterWrite?: () => Promise<void>,
   ): Promise<ActionResult> {
     let updateError: unknown;
     try {
@@ -697,6 +736,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     } catch (e) {
       updateError = e; // the click is committed; the bot must still hear about it
     }
+    await afterWrite?.();
     const event = decision.notify || error ? (await eventFor(next, decision, error)) : undefined;
     if (event) await fire(event, next);
     return result({ card: next, ...(event ? { event } : {}), ...(updateError ? { updateError } : {}) });
@@ -715,6 +755,51 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
       };
       if (!(await store.put(closed, card.version))) continue;
       await write(client, closed, closed.blocks);
+      return true;
+    }
+    return false;
+  }
+
+  async function updateCard(client: SlackClient, channel: string, ts: string, opts: UpdateCardOptions): Promise<boolean> {
+    let waited = 0;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const card = await store.get(channel, ts);
+      if (!card || card.kind !== "openui" || card.source === undefined) return false;
+      if (card.finishing && card.locked && now().getTime() - Date.parse(card.locked.at) < FINISH_STALE_MS) {
+        // A click is saving its result; changing the card now would make that save fail.
+        if (waited++ >= FINISH_WAIT_TRIES) return false;
+        await new Promise((r) => setTimeout(r, FINISH_WAIT_DELAY));
+        attempt--;
+        continue;
+      }
+      const src = opts.source === undefined ? card.source : stripFences(opts.source);
+      const state: Record<string, unknown> = { ...card.state };
+      for (const key of Object.keys(withDollar(Object.fromEntries(opts.replaceKeys.map((k) => [k, 0]))) ?? {})) delete state[key];
+      Object.assign(state, withDollar(opts.data));
+      const r = await engine.renderState(src, state).catch((e) => {
+        throw placed(e, src, ts) ?? e;
+      });
+      const open = blocksOf(r);
+      const lock = card.locked;
+      const blocks = lock
+        ? sanitize(
+            lockedBlocks(open, lock, lock.note !== undefined ? { closedNote: lock.note } : { note: lock.afterNote }),
+          )
+        : open;
+      const { finishing: _stale, ...kept } = card;
+      const next: CardRecord = {
+        ...kept,
+        ...(opts.access ? { access: opts.access } : {}),
+        source: src,
+        text: r.text,
+        state: r.state,
+        blocks,
+        controls: controlsFromRender(r),
+        forms: r.forms,
+        version: card.version + 1,
+      };
+      if (!(await store.put(next, card.version))) continue;
+      await write(client, next, next.blocks);
       return true;
     }
     return false;
@@ -785,6 +870,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     registerCard,
     getCard: (channel: string, ts: string) => store.get(channel, ts),
     closeCard,
+    updateCard,
     handleAction,
     handleViewSubmission,
     handleOptions,

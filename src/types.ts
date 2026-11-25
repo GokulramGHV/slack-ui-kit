@@ -39,6 +39,8 @@ export type LockInfo = {
   label: string;
   /** Set when the host closed the card (closeCard) instead of a click locking it. */
   note?: string;
+  /** An extra footer line below "pressed by", kept when the card is redrawn (set when the click's own work failed). */
+  afterNote?: string;
 };
 
 /** Everything stored for one card. (channel, ts) is the key; the card id is `channel:ts`. */
@@ -63,6 +65,8 @@ export type CardRecord = {
   /** form id -> spec, from the last render. */
   forms: Record<string, FormSpec>;
   locked?: LockInfo;
+  /** True from the moment a click claims the lock until its result is saved; updateCard waits for it. */
+  finishing?: true;
   /**
    * Groups of $state variable names (without `$`). A click that would lock the card is
    * refused until every group has at least one non-empty variable.

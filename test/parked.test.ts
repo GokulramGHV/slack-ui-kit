@@ -226,3 +226,159 @@ $comment = ""`;
     expect(JSON.stringify(update?.args.blocks)).toContain("Ada");
   });
 });
+
+describe("updateCard", () => {
+  const POST = (msg: string) => `root = Root([Header("Status"), Section("${msg}"), Radio("Size", $size, [Option("s", "Small"), Option("l", "Large")]), Actions([go])])
+$size = ""
+go = Button("Go", Action([@Set($done, "yes")]))`;
+
+  it("redraws an open card in place with the new state and keeps its controls", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    client.calls.length = 0;
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "l" }, replaceKeys: [] })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.version).toBe(2);
+    expect(card.state.$size).toBe("l");
+    expect(card.owner).toBe("U1");
+    expect(JSON.stringify(card.blocks)).toContain("radio_buttons");
+    expect(card.controls).toBeTruthy();
+    expect(client.calls.map((c) => c.method)).toEqual(["chat.update"]);
+    expect(client.calls[0]!.args).toMatchObject({ channel: "C1", ts });
+  });
+
+  it("changes the text from new state", async () => {
+    const { kit, client } = setup();
+    const src = `root = Root([Header("Status"), Section($msg)])
+$msg = "Beginning"`;
+    const { ts } = await kit.postCard(client, target, src, { owner: "U1", placeholder: false });
+    expect(await kit.updateCard(client, "C1", ts, { data: { msg: "Complete" }, replaceKeys: [] })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(JSON.stringify(card.blocks)).toContain("Complete");
+    expect(JSON.stringify(card.blocks)).not.toContain("Beginning");
+  });
+
+  it("draws with a new source when one is passed, and saves it", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    const src = `root = Root([Header("Renamed")])`;
+    expect(await kit.updateCard(client, "C1", ts, { data: {}, replaceKeys: [], source: src })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.source).toBe(src);
+    expect(JSON.stringify(card.blocks)).toContain("Renamed");
+  });
+
+  it("keeps a clicked-locked card locked, with no live controls", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: "go", text: { type: "plain_text", text: "Go" } }));
+    const locked = (await kit.getCard("C1", ts))!;
+    expect(locked.locked).toBeTruthy();
+    client.calls.length = 0;
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "s" }, replaceKeys: [] })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.locked).toEqual(locked.locked);
+    const text = JSON.stringify(card.blocks);
+    expect(text).toContain("pressed by");
+    expect(text).toContain("*Chosen:* Small");
+    expect(text).not.toContain("radio_buttons");
+    expect(text).not.toContain('"button"');
+    expect(client.calls.map((c) => c.method)).toEqual(["chat.update"]);
+  });
+
+  it("keeps the closeCard note on a closed card", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    await kit.closeCard(client, "C1", ts, { note: "Replaced by a newer card." });
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "l" }, replaceKeys: [] })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.locked).toMatchObject({ note: "Replaced by a newer card." });
+    const text = JSON.stringify(card.blocks);
+    expect(text).toContain("Replaced by a newer card.");
+    expect(text).toContain("*Chosen:* Large");
+    expect(text).not.toContain("pressed by");
+    expect(text).not.toContain("radio_buttons");
+  });
+
+  it("returns false for a missing card and for a raw blocks card, writing nothing", async () => {
+    const { kit, client } = setup();
+    expect(await kit.updateCard(client, "C1", "9.9", { data: {}, replaceKeys: [] })).toBe(false);
+    await kit.registerCard({ channel: "C1", ts: "5.5", blocks: [{ type: "section", text: { type: "mrkdwn", text: "hi" } }], owner: "U1" });
+    client.calls.length = 0;
+    expect(await kit.updateCard(client, "C1", "5.5", { data: {}, replaceKeys: [] })).toBe(false);
+    expect(client.calls).toEqual([]);
+  });
+
+  it("starts again on a version conflict and keeps what the competing write changed", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    const real = kit.store.put.bind(kit.store);
+    let first = true;
+    (kit.store as any).put = async (card: any, expected: number | null) => {
+      if (first) {
+        first = false;
+        const cur = await kit.store.get("C1", ts);
+        await real({ ...cur!, state: { ...cur!.state, $size: "l" }, version: cur!.version + 1 }, cur!.version);
+      }
+      return real(card, expected);
+    };
+    expect(await kit.updateCard(client, "C1", ts, { data: { note: "x" }, replaceKeys: ["note"] })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.version).toBe(3);
+    expect(card.state.$size).toBe("l");
+    expect(card.state.$note).toBe("x");
+  });
+
+  it("drops replaceKeys and keeps other saved state", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false, state: { size: "l" } });
+    expect(await kit.updateCard(client, "C1", ts, { data: {}, replaceKeys: ["size"] })).toBe(true);
+    expect((await kit.getCard("C1", ts))!.state.$size).toBe("");
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "s" }, replaceKeys: [] })).toBe(true);
+    expect((await kit.getCard("C1", ts))!.state.$size).toBe("s");
+  });
+
+  it("replaces the access rules and keeps the owner", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false, access: {} });
+    expect(await kit.updateCard(client, "C1", ts, { data: {}, replaceKeys: [], access: { byId: { go: "anyone" } } })).toBe(true);
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.access).toEqual({ byId: { go: "anyone" } });
+    expect(card.owner).toBe("U1");
+  });
+
+  it("waits for a click that is still finishing its lock, then redraws", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    const card = (await kit.getCard("C1", ts))!;
+    const lock = { by: "U1", at: new Date().toISOString(), label: "Go" };
+    await kit.store.put({ ...card, locked: lock, finishing: true, version: card.version + 1 }, card.version);
+    setTimeout(async () => {
+      const cur = (await kit.getCard("C1", ts))!;
+      const { finishing: _f, ...rest } = cur;
+      await kit.store.put({ ...rest, version: cur.version + 1 }, cur.version);
+    }, 150);
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "s" }, replaceKeys: [] })).toBe(true);
+    expect((await kit.getCard("C1", ts))!.locked).toEqual(lock);
+  });
+
+  it("gives up with false when the click never finishes, and writes nothing", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    const card = (await kit.getCard("C1", ts))!;
+    await kit.store.put({ ...card, locked: { by: "U1", at: new Date().toISOString(), label: "Go" }, finishing: true, version: card.version + 1 }, card.version);
+    client.calls.length = 0;
+    expect(await kit.updateCard(client, "C1", ts, { data: { size: "s" }, replaceKeys: [] })).toBe(false);
+    expect(client.calls).toEqual([]);
+  });
+
+  it("clears the finishing marker when a click's lock completes", async () => {
+    const { kit, client } = setup();
+    const { ts } = await kit.postCard(client, target, POST("Starting"), { owner: "U1", placeholder: false });
+    await kit.handleAction(client, click(ts, "U1", { type: "button", action_id: "go", text: { type: "plain_text", text: "Go" } }));
+    await new Promise((r) => setTimeout(r, 20));
+    const card = (await kit.getCard("C1", ts))!;
+    expect(card.locked).toBeTruthy();
+    expect(card.finishing).toBeUndefined();
+  });
+});
