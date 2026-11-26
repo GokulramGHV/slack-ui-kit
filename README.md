@@ -115,7 +115,9 @@ access: {
   id, "Nobody can do this yet." The rule is checked against the state saved
   before the click, so a click can't change who may act. Still, do not bind the
   named variable to an input the card's own controls can change: that would
-  let whoever may press them hand the card to someone else. Set it with
+  let whoever may press them hand the card to someone else. Like `byId`, it is
+  honoured only on `trusted` cards; on any other card a `stateUser` rule denies
+  everyone. Set it with
   `postCard(..., { state: { assignee: "U123" } })`.
 - A refused click gets a private note ("Only <@U123> can do this."). A refused
   input change also redraws the card, which undoes the tick on the clicker's

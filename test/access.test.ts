@@ -107,3 +107,21 @@ describe("stateUser rule", () => {
     expect(refusalText({ users: ["U5"] }, "U1", state)).toBe("Only <@U5> can do this.");
   });
 });
+
+describe("stateUser guards", () => {
+  it("is honoured only on trusted cards, from any slot", () => {
+    const rule = { stateUser: "assignee" };
+    for (const access of [{ default: rule }, { buttons: rule }, { inputs: rule }, { forms: rule }, { feedback: rule }] as Access[]) {
+      const untrusted = ruleFor(card(access), { id: "x", kind: "button" });
+      expect(untrusted).not.toEqual(rule);
+    }
+    expect(ruleFor(card({ buttons: rule }, true), { id: "x", kind: "button" })).toEqual(rule);
+    expect(ruleFor(card({ feedback: rule }), { id: "x", kind: "feedback" })).toEqual({ users: [] });
+  });
+
+  it("denies instead of throwing on a non-string key", async () => {
+    const bad = { stateUser: 5 } as any;
+    expect(await isAllowed(bad, "U1", "U1", undefined, { $5: "U1" })).toBe(false);
+    expect(refusalText(bad, "U1", {})).toBe("Nobody can do this yet.");
+  });
+});

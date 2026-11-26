@@ -11,6 +11,13 @@ type CardAccess = { access: Access; trusted: boolean; owner: string };
  * trusted cards, since on Claude-written cards Claude picks the ids.
  */
 export function ruleFor(card: CardAccess, control: { id: string; kind: ControlKind | undefined }): Rule {
+  const rule = pickRule(card, control);
+  // A stateUser rule reads state the model could have set, so it only counts on trusted cards. Elsewhere: nobody.
+  if (!card.trusted && typeof rule === "object" && "stateUser" in rule) return { users: [] };
+  return rule;
+}
+
+function pickRule(card: CardAccess, control: { id: string; kind: ControlKind | undefined }): Rule {
   const { access, trusted } = card;
   if (!control.kind) return "owner";
   const byId = trusted ? access.byId?.[control.id] : undefined;
@@ -34,7 +41,8 @@ const USER_ID = /^[UW][A-Z0-9]{2,}$/;
  * (stored with a dollar sign; the rule may name it with or without). Undefined
  * unless it is a well-formed user id, so a missing or odd value allows nobody.
  */
-function stateUserId(key: string, state: Record<string, unknown> | undefined): string | undefined {
+function stateUserId(key: unknown, state: Record<string, unknown> | undefined): string | undefined {
+  if (typeof key !== "string") return undefined;
   const v = state?.[key.startsWith("$") ? key : "$" + key];
   return typeof v === "string" && USER_ID.test(v) ? v : undefined;
 }

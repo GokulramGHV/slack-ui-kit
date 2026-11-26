@@ -9,7 +9,7 @@
  */
 import { createCardPreview, FORM_CALLBACK_ID, isChartBlock } from "@openuidev/channels/slack";
 import type { SlackTools } from "@openuidev/channels/slack";
-import type { GroupResolver } from "./access.js";
+import { isAllowed, ruleFor, type GroupResolver } from "./access.js";
 import { clipTo } from "./blocks.js";
 import { applyDecision, blocksOf, lockInfoFor, newOpenUICard } from "./apply.js";
 import { controlsFromBlocks, controlsFromRender, stateLabelsFromRender } from "./controls.js";
@@ -521,7 +521,12 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
     }
   }
 
-  async function requiredMet(card: CardRecord, click: Click, payload: any): Promise<{ met: boolean; base: CardRecord }> {
+  async function requiredMet(
+    card: CardRecord,
+    click: Click,
+    payload: any,
+    client: SlackClient,
+  ): Promise<{ met: boolean; base: CardRecord }> {
     if (!card.required?.length) return { met: true, base: card };
     let base = card;
     let state = card.state;
@@ -531,6 +536,9 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         for (const block of Object.values<any>(payload?.state?.values ?? {})) Object.assign(sent, block);
         for (const [actionId, el] of Object.entries(sent)) {
           if (card.controls[actionId] !== "input" || actionId === click.actionId) continue;
+          // The press carries every input's value; keep only those this user may change.
+          const rule = ruleFor(card, { id: actionId, kind: "input" });
+          if (!(await isAllowed(rule, click.user, card.owner, groupsFor(client), card.state))) continue;
           state = (await silently(() => previewEngine.applyInteraction(card.source!, state, { actionId, value: elementValue(el) }))).state;
         }
         base = { ...card, state };
@@ -614,7 +622,7 @@ export function createSlackKit(opts: SlackKitOptions = {}): SlackKit {
         }
         let base = card;
         if (decision.lock) {
-          const check = await requiredMet(card, read.click, payload);
+          const check = await requiredMet(card, read.click, payload, client);
           base = check.base;
           if (!check.met) {
             if (submit) {
