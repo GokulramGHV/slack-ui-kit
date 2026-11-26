@@ -4,8 +4,12 @@ import type { Block } from "./sanitize.js";
 /** An OpenUI form spec, saved so a form opens without rendering again. */
 export type FormSpec = RenderResult<unknown>["forms"][string];
 
-/** Who may use a control. */
-export type Rule = "owner" | "anyone" | { group: string } | { users: string[] };
+/**
+ * Who may use a control. `stateUser` names a key in the card's state ($state
+ * variable, with or without the dollar sign); only the Slack user whose id is
+ * that value may act, and nobody may when it is missing or not a user id.
+ */
+export type Rule = "owner" | "anyone" | { group: string } | { users: string[] } | { stateUser: string };
 
 /** What kind of control a click came from. Read from the render, never from names Claude picks. */
 export type ControlKind = "button" | "input" | "feedback" | "form";

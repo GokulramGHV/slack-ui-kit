@@ -87,7 +87,7 @@ On a model-written card, control names are whatever the model wrote. So rules
 go by **kind of control**, never by name:
 
 ```ts
-type Rule = "owner" | "anyone" | { group: "S0123" } | { users: ["U1", "U2"] };
+type Rule = "owner" | "anyone" | { group: "S0123" } | { users: ["U1", "U2"] } | { stateUser: "assignee" };
 
 access: {
   default?: Rule,      // missing: "owner"
@@ -106,6 +106,17 @@ access: {
 - A group lookup (`usergroups.users.list`, needs `usergroups:read`) is cached
   for 60 seconds. If it fails or takes longer than 1.5 seconds, the click is
   denied.
+- `{ stateUser: "assignee" }` is for a card meant for one person who is only
+  known when it is posted. It names a `$state` variable (with or without the
+  `$`); only the Slack user whose id is that value may act. The value must look
+  like a user id (`U` or `W`, then capitals and digits). A missing, empty or
+  malformed value means nobody can act: it never falls back to the owner or to
+  anyone. The refusal note reads "Only <@U123> can do this." or, with no valid
+  id, "Nobody can do this yet." The rule is checked against the state saved
+  before the click, so a click can't change who may act. Still, do not bind the
+  named variable to an input the card's own controls can change: that would
+  let whoever may press them hand the card to someone else. Set it with
+  `postCard(..., { state: { assignee: "U123" } })`.
 - A refused click gets a private note ("Only <@U123> can do this."). A refused
   input change also redraws the card, which undoes the tick on the clicker's
   screen.

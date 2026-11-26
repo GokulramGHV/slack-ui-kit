@@ -141,4 +141,30 @@ describe("clickFromSubmission", () => {
     expect(clickFromSubmission(view("not json"), opts)).toBeUndefined();
     expect(clickFromSubmission(view(JSON.stringify({ channel: "C1" })), opts)).toBeUndefined();
   });
+
+  describe("stateUser rule", () => {
+    const access: Access = { buttons: { stateUser: "assignee" }, inputs: { stateUser: "assignee" } };
+
+    it("applies for the named user and denies everyone else, owner included", async () => {
+      const c = card({ access, state: { $assignee: "U2ABC" } });
+      expect((await decide({ user: "U2ABC", actionId: "go" }, c, ctx)).type).toBe("apply");
+      expect(await decide({ user: "U1", actionId: "go" }, c, ctx)).toMatchObject({ type: "deny", message: "Only <@U2ABC> can do this." });
+      expect((await decide({ user: "U3", actionId: "pick" }, c, ctx)).type).toBe("deny");
+    });
+
+    it("denies everyone when the state has no valid user id", async () => {
+      const c = card({ access, state: { $assignee: "" } });
+      expect(await decide({ user: "U1", actionId: "go" }, c, ctx)).toMatchObject({ type: "deny", message: "Nobody can do this yet." });
+      expect((await decide({ user: "U2ABC", actionId: "go" }, card({ access }), ctx)).type).toBe("deny");
+    });
+
+    it("is decided on the state before the click, so a click can't grant itself access", async () => {
+      // The record holds the pre-click state; the click's own value (naming the clicker) is not in it.
+      const c = card({ access, state: { $assignee: "U2ABC" } });
+      const d = await decide({ user: "U3", actionId: "pick", value: "U3" }, c, ctx);
+      expect(d.type).toBe("deny");
+      const empty = card({ access, state: {} });
+      expect((await decide({ user: "U3", actionId: "pick", value: "U3" }, empty, ctx)).type).toBe("deny");
+    });
+  });
 });

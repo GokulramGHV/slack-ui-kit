@@ -51,8 +51,9 @@ export async function decide(click: Click, card: CardRecord, ctx: DecideContext 
   if (!kind) return { type: "ignore", click, reason: "unknown-control" };
   if (card.locked && kind !== "feedback") return { type: "locked", click };
   const rule = ruleFor(card, { id: click.actionId, kind });
-  if (!(await isAllowed(rule, click.user, card.owner, ctx.resolveGroup))) {
-    return { type: "deny", click, kind, rule, message: refusalText(rule, card.owner) };
+  // card.state is the state before this click's own changes, so a click can't name who may act.
+  if (!(await isAllowed(rule, click.user, card.owner, ctx.resolveGroup, card.state))) {
+    return { type: "deny", click, kind, rule, message: refusalText(rule, card.owner, card.state) };
   }
   if (kind === "form" && !click.submit) return { type: "open-form", click, formId: click.actionId.slice("form:".length) };
   const notify = kind !== "input" || ctx.events === "all";

@@ -65,3 +65,45 @@ describe("refusalText", () => {
     expect(refusalText({ users: ["U5", "U6"] }, "U1")).toBe("Only <@U5> or <@U6> can do this.");
   });
 });
+
+describe("stateUser rule", () => {
+  const rule = { stateUser: "assignee" };
+  const state = { $assignee: "U2ABC" };
+
+  it("allows only the user named in the state", async () => {
+    expect(await isAllowed(rule, "U2ABC", "U1", undefined, state)).toBe(true);
+    expect(await isAllowed(rule, "U3", "U1", undefined, state)).toBe(false);
+  });
+
+  it("refuses the card owner too", async () => {
+    expect(await isAllowed(rule, "U1", "U1", undefined, state)).toBe(false);
+  });
+
+  it("accepts the key written with a dollar sign", async () => {
+    expect(await isAllowed({ stateUser: "$assignee" }, "U2ABC", "U1", undefined, state)).toBe(true);
+  });
+
+  it("allows nobody when the value is missing, empty or malformed", async () => {
+    for (const bad of [undefined, "", "u2abc", "U2", "X123", "U2 ABC", 5, null, ["U2ABC"], { id: "U2ABC" }]) {
+      const st = bad === undefined ? {} : { $assignee: bad };
+      expect(await isAllowed(rule, "U2ABC", "U1", undefined, st)).toBe(false);
+      expect(await isAllowed(rule, "U1", "U1", undefined, st)).toBe(false);
+    }
+    expect(await isAllowed(rule, "U2ABC", "U1", undefined)).toBe(false);
+  });
+
+  it("names the stored id in the refusal, or says nobody can yet", () => {
+    expect(refusalText(rule, "U1", state)).toBe("Only <@U2ABC> can do this.");
+    expect(refusalText(rule, "U1", { $assignee: "nope" })).toBe("Nobody can do this yet.");
+    expect(refusalText(rule, "U1")).toBe("Nobody can do this yet.");
+  });
+
+  it("leaves the existing rule forms unchanged", async () => {
+    expect(await isAllowed("owner", "U1", "U1", undefined, state)).toBe(true);
+    expect(await isAllowed("owner", "U2ABC", "U1", undefined, state)).toBe(false);
+    expect(await isAllowed("anyone", "U9", "U1", undefined, state)).toBe(true);
+    expect(await isAllowed({ users: ["U5"] }, "U5", "U1", undefined, state)).toBe(true);
+    expect(await isAllowed({ group: "S1" }, "U2", "U1", async () => ["U2"], state)).toBe(true);
+    expect(refusalText({ users: ["U5"] }, "U1", state)).toBe("Only <@U5> can do this.");
+  });
+});

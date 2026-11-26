@@ -1,6 +1,6 @@
 {
   "name": "slack-ui-kit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Slack UI kit for bots: wraps OpenUI's Slack renderer with click rules, lock on submit, click events and extra Slack blocks.",
   "license": "UNLICENSED",
